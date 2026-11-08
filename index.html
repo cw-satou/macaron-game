@@ -7,17 +7,35 @@
 <link rel="stylesheet" href="../shared/yuki.css">
 <style>
   html,body{height:100%;touch-action:none;overflow:hidden}
-  body{background:var(--paper-2)}
-  #wrap{display:flex;flex-direction:column;align-items:center;height:calc(100% - 64px)}
-  #hud{display:flex;gap:20px;padding:10px 8px;align-items:center;font-weight:800}
+  body{background:linear-gradient(#f3f6ff,#fff 70%)}
+  #hud{display:flex;justify-content:center;gap:24px;padding:8px;align-items:center;font-weight:800;height:52px}
   #hud .lbl{font-size:var(--fs-xs);color:var(--ink-soft);margin-right:.3em}
-  #score{font-size:var(--fs-l)}
+  #score{font-size:var(--fs-l);display:inline-block}
+  #score.bump{animation:bump .3s ease}
+  @keyframes bump{40%{transform:scale(1.35);color:var(--pink)}}
   #next{display:inline-block;width:26px;height:26px;vertical-align:middle;border-radius:50%;border:var(--line) solid var(--ink)}
-  canvas{background:var(--paper);border:var(--line) solid var(--ink);border-top:none;border-radius:0 0 var(--r) var(--r);display:block;box-shadow:var(--shadow)}
-  #over{position:fixed;inset:0;background:rgba(27,20,70,.55);display:none;align-items:center;justify-content:center;padding:20px}
+  #stage{position:relative;margin:0 auto}
+  #c{display:block;touch-action:none}
+  #fx{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+
+  /* 立体の文字: 正面から少しずらした向きで、濃紺の厚みを右下へ押し出す */
+  .pop3d{position:absolute;left:0;top:0;white-space:nowrap;font-weight:800;line-height:1.1;text-align:center;
+    color:var(--c,#ff3d8b);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;
+    text-shadow:1px 1px 0 var(--ink),2px 2px 0 var(--ink),3px 3px 0 var(--ink),4px 4px 0 var(--ink),5px 5px 0 var(--ink),6px 7px 6px rgba(27,20,70,.25);
+    animation:pop3d 1.2s cubic-bezier(.2,.9,.3,1.2) forwards}
+  .pop3d small{display:block;font-size:.62em;color:#fff}
+  @keyframes pop3d{
+    0%{transform:translate(-50%,-50%) perspective(600px) rotateX(18deg) rotateY(-16deg) scale(.4);opacity:0}
+    18%{transform:translate(-50%,-50%) perspective(600px) rotateX(14deg) rotateY(-12deg) scale(1.15);opacity:1}
+    30%{transform:translate(-50%,-50%) perspective(600px) rotateX(14deg) rotateY(-12deg) scale(1)}
+    75%{opacity:1}
+    100%{transform:translate(-50%,-140%) perspective(600px) rotateX(14deg) rotateY(-12deg) scale(1);opacity:0}}
+
+  #over{position:fixed;inset:0;background:rgba(27,20,70,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:30}
   #over .panel{width:min(360px,100%);padding:28px 24px;text-align:center;display:flex;flex-direction:column;gap:12px}
   #over h2{font-size:var(--fs-xl)}
   #over .got{font-size:30px;color:var(--pink)}
+  #err{display:none;padding:24px;text-align:center}
 </style>
 </head>
 <body>
@@ -25,10 +43,9 @@
   <a class="logo" href="../"><span class="h24">24H</span>ユウキ<span class="arrow">↑</span>ゲームズ</a>
   <span class="wallet"><small>所持金</small><span id="yen" class="num">0円</span></span>
 </header>
-<div id="wrap">
-  <div id="hud"><span><span class="lbl">スコア</span><b id="score" class="num">0</b></span><span><span class="lbl">ネクスト</span><span id="next"></span></span></div>
-  <canvas id="c"></canvas>
-</div>
+<div id="hud"><span><span class="lbl">スコア</span><b id="score" class="num">0</b></span><span><span class="lbl">ネクスト</span><span id="next"></span></span></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div></div>
+<p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2>ゲームオーバー</h2>
   <p>スコア <b id="final" class="num">0</b></p>
@@ -39,107 +56,406 @@
 </div></div>
 <script src="../shared/yuki.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
-<script>
-const GAME_ID='macaron-game';
-document.getElementById('yen').textContent=Yuki.yen(Yuki.state.yen);
-const {Engine,Render,Runner,Bodies,Body,Composite,Events,World}=Matter;
-const W=Math.min(420,window.innerWidth-16), H=Math.min(620,window.innerHeight-140);
-const LINE=110;
-const MAC=[
- {name:'ミント',   r:18,c:'#9fe3c8',s:'#5fbf9c'},
- {name:'レモン',   r:24,c:'#fff09a',s:'#e6c84a'},
- {name:'ピスタチオ',r:31,c:'#c6e39b',s:'#8fbf5a'},
- {name:'ラベンダー',r:39,c:'#d5c3ee',s:'#a58bd6'},
- {name:'オレンジ', r:48,c:'#ffc48a',s:'#f08f3a'},
- {name:'チョコ',   r:58,c:'#b98564',s:'#7d5236'},
- {name:'キャラメル',r:69,c:'#e3b36e',s:'#b9803a'},
- {name:'バニラ',   r:81,c:'#fff4dc',s:'#dcc08e'},
- {name:'いちご',   r:95,c:'#ff9bb8',s:'#e4587f'}
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const GAME_ID = 'macaron-game';
+const $ = id => document.getElementById(id);
+$('yen').textContent = Yuki.yen(Yuki.state.yen);
+
+// ---- ルール(第1段階の仕様) ----
+const W = 420, H = 620, LINE = 110, DROP_Y = 55;
+const MAC = [
+  {name:'ミント',     r:18, c:'#9fe3c8', s:'#5fbf9c'},
+  {name:'レモン',     r:24, c:'#fff09a', s:'#e6c84a'},
+  {name:'ピスタチオ', r:31, c:'#c6e39b', s:'#8fbf5a'},
+  {name:'ラベンダー', r:39, c:'#d5c3ee', s:'#a58bd6'},
+  {name:'オレンジ',   r:48, c:'#ffc48a', s:'#f08f3a'},
+  {name:'チョコ',     r:58, c:'#b98564', s:'#7d5236'},
+  {name:'キャラメル', r:69, c:'#e3b36e', s:'#b9803a'},
+  {name:'バニラ',     r:81, c:'#fff4dc', s:'#dcc08e'},
+  {name:'いちご',     r:95, c:'#ff9bb8', s:'#e4587f'},
 ];
-const SCORE=[1,3,6,10,15,21,28,36,45];
-let score=0, gameOver=false, canDrop=true, current=null, nextLv=rnd(), overTimer=0;
-function rnd(){return Math.floor(Math.random()*4);}
+const SCORE = [1,3,6,10,15,21,28,36,45];
+const HALF_H = 0.6;           // マカロンの厚みの半分(半径に対する比)
+const MERGE_SLACK = 0.12;     // くっつく判定のゆとり(半径に対する比)。触れる少し手前でくっつく
+const rnd = () => Math.floor(Math.random() * 4);
 
-const engine=Engine.create(); engine.gravity.y=1.2;
-const canvas=document.getElementById('c');
-const render=Render.create({canvas,engine,options:{width:W,height:H,wireframes:false,background:'transparent'}});
-const wallOpt={isStatic:true,render:{visible:false}};
-World.add(engine.world,[
-  Bodies.rectangle(W/2,H+20,W,40,wallOpt),
-  Bodies.rectangle(-20,H/2,40,H*2,wallOpt),
-  Bodies.rectangle(W+20,H/2,40,H*2,wallOpt)
+// ---- 物理(平面のまま。見た目だけ立体にする) ----
+const {Engine, Bodies, Body, Composite, Events} = Matter;
+const engine = Engine.create(); engine.gravity.y = 1.2;
+const world = engine.world;
+const wall = {isStatic:true, label:'wall'};
+Composite.add(world, [
+  Bodies.rectangle(W/2, H+20, W+80, 40, wall),
+  Bodies.rectangle(-20, H/2, 40, H*2, wall),
+  Bodies.rectangle(W+20, H/2, 40, H*2, wall),
 ]);
-Render.run(render); Runner.run(Runner.create(),engine);
-
-function makeMacaron(x,y,lv,st=false){
-  const m=MAC[lv];
-  const b=Bodies.circle(x,y,m.r,{isStatic:st,restitution:.15,friction:.4,density:.002,label:'mac',render:{visible:false}});
-  b.lv=lv; return b;
+function makeBody(x, y, lv, st = false){
+  const r = MAC[lv].r;
+  const b = Bodies.rectangle(x, y, 2*r, 2*r*HALF_H, {chamfer:{radius:r*HALF_H*0.92}, isStatic:st,
+    restitution:.12, friction:.45, density:.002, label:'mac'});
+  b.lv = lv; return b;
 }
+
+// ---- 立体の表示 ----
+let renderer;
+try{ renderer = new THREE.WebGLRenderer({canvas:$('c'), antialias:true, alpha:true}) }
+catch(e){ $('stage').style.display = 'none'; $('err').style.display = 'block'; throw e }
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 10, 6000);
+const TARGET = new THREE.Vector3(0, H*0.40, 0);
+const ELEV = THREE.MathUtils.degToRad(16), AZIM = THREE.MathUtils.degToRad(-11);  // 少し上から、少し右から
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xffd6e4, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(-220, 900, 520); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, {left:-420, right:420, top:420, bottom:-420, near:100, far:2200});
+sun.shadow.radius = 6; sun.shadow.bias = -0.0008;
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0xbfe8ff, .7); rim.position.set(400, 300, -400); scene.add(rim);
+
+// 白いお皿
+const PLATE_R = 330;
+const plateMat = new THREE.MeshPhysicalMaterial({color:0xffffff, roughness:.25, clearcoat:1, clearcoatRoughness:.15});
+const plate = new THREE.Mesh(new THREE.CylinderGeometry(PLATE_R, PLATE_R*.86, 16, 96), plateMat);
+plate.position.y = -8; plate.receiveShadow = true; scene.add(plate);
+const plateRim = new THREE.Mesh(new THREE.TorusGeometry(PLATE_R-6, 7, 16, 120), plateMat);
+plateRim.rotation.x = Math.PI/2; plateRim.position.y = 1; plateRim.receiveShadow = true; scene.add(plateRim);
+const plateLine = new THREE.Mesh(new THREE.TorusGeometry(PLATE_R-34, 1.6, 8, 120), new THREE.MeshStandardMaterial({color:0xff9bb8, roughness:.4}));
+plateLine.rotation.x = Math.PI/2; plateLine.position.y = .4; scene.add(plateLine);
+
+// 箱(左右と奥のガラス)
+const DEPTH = 2*MAC[8].r + 16;
+const glass = new THREE.MeshPhysicalMaterial({color:0xcfefff, transparent:true, opacity:.22, roughness:.05, clearcoat:1, depthWrite:false});
+for(const sx of [-1, 1]){
+  const p = new THREE.Mesh(new THREE.BoxGeometry(6, H, DEPTH), glass);
+  p.position.set(sx*(W/2+3), H/2, 0); scene.add(p);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(7, H, 4), new THREE.MeshStandardMaterial({color:0x1b1446}));
+  edge.position.set(sx*(W/2+3), H/2, DEPTH/2); scene.add(edge);
+}
+const back = new THREE.Mesh(new THREE.PlaneGeometry(W+12, H), new THREE.MeshPhysicalMaterial({color:0xe8f4ff, transparent:true, opacity:.35, depthWrite:false}));
+back.position.set(0, H/2, -DEPTH/2); scene.add(back);
+// ゲームオーバーの線(手前に点線、奥行きに薄い帯)
+const lineY = H - LINE;
+const dashGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-W/2, lineY, DEPTH/2+2), new THREE.Vector3(W/2, lineY, DEPTH/2+2)]);
+const dash = new THREE.Line(dashGeo, new THREE.LineDashedMaterial({color:0xe8204f, dashSize:10, gapSize:7}));
+dash.computeLineDistances(); scene.add(dash);
+const band = new THREE.Mesh(new THREE.PlaneGeometry(W, DEPTH), new THREE.MeshBasicMaterial({color:0xff3d8b, transparent:true, opacity:.12, side:THREE.DoubleSide, depthWrite:false}));
+band.rotation.x = -Math.PI/2; band.position.y = lineY; scene.add(band);
+
+// マカロンの形(段階ごとに部品を作り置き)
+const PARTS = MAC.map(m => {
+  const shell = new THREE.MeshPhysicalMaterial({color:m.c, roughness:.5, clearcoat:.35, clearcoatRoughness:.5, sheen:.6, sheenColor:new THREE.Color('#ffffff')});
+  const foot = new THREE.MeshStandardMaterial({color:m.s, roughness:.85});
+  const cream = new THREE.MeshStandardMaterial({color:new THREE.Color(m.c).lerp(new THREE.Color('#ffffff'), .62), roughness:.7});
+  return {shell, foot, cream};
+});
+const geo = {
+  shell: new THREE.SphereGeometry(1, 48, 24),
+  foot: new THREE.TorusGeometry(.9, .09, 10, 48),
+  cream: new THREE.CylinderGeometry(.88, .88, .26, 48),
+  eye: new THREE.SphereGeometry(1, 16, 12),
+  mouth: new THREE.TorusGeometry(1, .28, 8, 16, Math.PI),
+};
+const inkMat = new THREE.MeshStandardMaterial({color:0x1b1446, roughness:.3});
+const blushMat = new THREE.MeshStandardMaterial({color:0xff6f9c, roughness:.8, transparent:true, opacity:.7});
+
+function makeMacaronMesh(lv){
+  const r = MAC[lv].r, P = PARTS[lv];
+  const outer = new THREE.Group(), jig = new THREE.Group();
+  outer.add(jig);
+  const top = new THREE.Mesh(geo.shell, P.shell); top.scale.set(r, r*.3, r); top.position.y = r*.27;
+  const bot = new THREE.Mesh(geo.shell, P.shell); bot.scale.set(r, r*.26, r); bot.position.y = -r*.27;
+  const cream = new THREE.Mesh(geo.cream, P.cream); cream.scale.set(r, r, r);
+  const f1 = new THREE.Mesh(geo.foot, P.foot); f1.scale.setScalar(r); f1.rotation.x = Math.PI/2; f1.position.y = r*.12;
+  const f2 = f1.clone(); f2.position.y = -r*.12;
+  for(const m of [top, bot, cream, f1, f2]){ m.castShadow = true; m.receiveShadow = true; jig.add(m) }
+  // 顔(上の殻の手前)
+  const face = new THREE.Group();
+  for(const sx of [-1, 1]){
+    const e = new THREE.Mesh(geo.eye, inkMat); e.scale.setScalar(r*.075); e.position.set(sx*r*.26, r*.36, r*.9); face.add(e);
+    const hl = new THREE.Mesh(geo.eye, new THREE.MeshBasicMaterial({color:0xffffff})); hl.scale.setScalar(r*.025);
+    hl.position.set(sx*r*.26 - r*.025, r*.385, r*.97); face.add(hl);
+    const bl = new THREE.Mesh(geo.eye, blushMat); bl.scale.set(r*.11, r*.05, r*.03); bl.position.set(sx*r*.47, r*.31, r*.86); face.add(bl);
+  }
+  const mo = new THREE.Mesh(geo.mouth, inkMat); mo.scale.setScalar(r*.07); mo.rotation.z = Math.PI; mo.position.set(0, r*.33, r*.96); face.add(mo);
+  jig.add(face);
+  outer.userData = {sq:0, sv:0, pop:0, t:Math.random()*10, face};
+  return outer;
+}
+const meshes = new Map();   // body.id → 立体
+function addMacaron(b){ const m = makeMacaronMesh(b.lv); meshes.set(b.id, m); scene.add(m); return m }
+function removeMacaron(b){ const m = meshes.get(b.id); if(m){ scene.remove(m); meshes.delete(b.id) } }
+const toWorld = (x, y) => new THREE.Vector3(x - W/2, H - y, 0);
+
+// ---- 画面の大きさ ----
+function fit(){
+  const w = Math.min(innerWidth, 760), h = Math.max(320, innerHeight - 64 - 52);
+  renderer.setSize(w, h); $('stage').style.width = w + 'px'; $('stage').style.height = h + 'px';
+  camera.aspect = w / h;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+  const dist = Math.max((H*1.36)/2/t, (PLATE_R*2*1.04)/2/t/camera.aspect);
+  camera.position.set(TARGET.x + dist*Math.cos(ELEV)*Math.sin(AZIM), TARGET.y + dist*Math.sin(ELEV), TARGET.z + dist*Math.cos(ELEV)*Math.cos(AZIM));
+  camera.lookAt(TARGET); camera.updateProjectionMatrix();
+}
+addEventListener('resize', fit); fit();
+
+// ---- 立体の文字 ----
+function project(v){
+  const p = v.clone().project(camera), w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
+  return {x:(p.x+1)/2*w, y:(1-p.y)/2*h};
+}
+function pop3d(text, sub, at, size, color){
+  const el = document.createElement('div');
+  el.className = 'pop3d';
+  el.innerHTML = text + (sub ? `<small>${sub}</small>` : '');
+  const s = project(at);
+  el.style.left = s.x + 'px'; el.style.top = s.y + 'px';
+  el.style.fontSize = size + 'px'; el.style.setProperty('--c', color);
+  $('fx').appendChild(el);
+  setTimeout(() => el.remove(), 1250);
+}
+
+// ---- 弾ける粒 ----
+const bits = [];
+const bitGeo = [new THREE.SphereGeometry(1, 10, 8), new THREE.BoxGeometry(1.6, .5, 1), new THREE.OctahedronGeometry(1.1)];
+function burst(at, color, n, power){
+  const mat = new THREE.MeshStandardMaterial({color, roughness:.4});
+  const sparkle = new THREE.MeshStandardMaterial({color:0xffffff, emissive:0xffe9a8, emissiveIntensity:.6});
+  for(let i = 0; i < n; i++){
+    const m = new THREE.Mesh(bitGeo[i % 3], i % 4 === 0 ? sparkle : mat);
+    m.scale.setScalar(3 + Math.random()*3 * power);
+    m.position.copy(at);
+    const a = Math.random()*Math.PI*2, up = Math.random();
+    m.userData = {v:new THREE.Vector3(Math.cos(a)*(2+Math.random()*4)*power, (3+up*6)*power, Math.sin(a)*(2+Math.random()*4)*power),
+      spin:new THREE.Vector3(Math.random(), Math.random(), Math.random()).multiplyScalar(.3), life:1};
+    scene.add(m); bits.push(m);
+  }
+}
+
+// ---- お皿の飾り(スコアが上がるほど増える) ----
+const decos = [];
+const DECO_STEP = 30;        // 30点ごとに1つ
+const DECO_MAX = 140;
+const decoMats = {
+  sprinkle:['#ff3d8b','#27b4f5','#ffd23f','#7be0b0','#b48cff'].map(c => new THREE.MeshStandardMaterial({color:c, roughness:.4})),
+  berry:new THREE.MeshPhysicalMaterial({color:'#ff2f5f', roughness:.2, clearcoat:1}),
+  leaf:new THREE.MeshStandardMaterial({color:'#4cc38a', roughness:.5}),
+  cream:new THREE.MeshPhysicalMaterial({color:'#fffaf2', roughness:.6, sheen:.5}),
+  star:new THREE.MeshStandardMaterial({color:'#ffd23f', roughness:.3, emissive:'#ffb800', emissiveIntensity:.25}),
+  candle:new THREE.MeshStandardMaterial({color:'#ffffff', roughness:.5}),
+  flame:new THREE.MeshBasicMaterial({color:'#ffb43a'}),
+};
+const decoGeo = {
+  sprinkle:new THREE.CapsuleGeometry(1.6, 7, 4, 8), berry:new THREE.SphereGeometry(8, 20, 14),
+  leaf:new THREE.SphereGeometry(1, 12, 8), cream:new THREE.ConeGeometry(9, 16, 8, 1), dollop:new THREE.SphereGeometry(9, 16, 12),
+  star:new THREE.OctahedronGeometry(6), candle:new THREE.CylinderGeometry(3, 3, 26, 12), flame:new THREE.SphereGeometry(3.2, 10, 8),
+};
+function decoSpot(){
+  for(let i = 0; i < 40; i++){
+    const a = Math.random()*Math.PI*2, d = Math.sqrt(Math.random())*(PLATE_R - 22);
+    const x = Math.cos(a)*d, z = Math.sin(a)*d;
+    if(Math.abs(x) < W/2 + 14 && Math.abs(z) < DEPTH/2 + 6) continue;   // 箱の下には置かない
+    return {x, z};
+  }
+  return {x:(Math.random() < .5 ? -1 : 1)*(W/2 + 40), z:DEPTH/2 + 30};
+}
+function makeDeco(k){
+  const g = new THREE.Group();
+  const kinds = k < 20 ? ['sprinkle','sprinkle','sprinkle','berry','leaf'] : k < 60 ? ['sprinkle','sprinkle','berry','leaf','cream','star','mini'] : ['sprinkle','berry','cream','star','mini','candle','mini'];
+  const kind = kinds[Math.floor(Math.random()*kinds.length)];
+  if(kind === 'sprinkle'){
+    for(let i = 0; i < 6; i++){
+      const s = new THREE.Mesh(decoGeo.sprinkle, decoMats.sprinkle[Math.floor(Math.random()*5)]);
+      s.rotation.set(Math.PI/2, 0, Math.random()*Math.PI); s.position.set((Math.random()-.5)*26, 1.8, (Math.random()-.5)*26); g.add(s);
+    }
+  }else if(kind === 'berry'){
+    const b = new THREE.Mesh(decoGeo.berry, decoMats.berry); b.scale.set(1, 1.15, 1); b.position.y = 8; g.add(b);
+    const l = new THREE.Mesh(decoGeo.leaf, decoMats.leaf); l.scale.set(7, 2, 3); l.position.y = 17; g.add(l);
+  }else if(kind === 'leaf'){
+    for(const r of [0, 1.2]){ const l = new THREE.Mesh(decoGeo.leaf, decoMats.leaf); l.scale.set(10, 1.5, 4.5); l.rotation.y = r; l.position.y = 2; g.add(l) }
+  }else if(kind === 'cream'){
+    const d = new THREE.Mesh(decoGeo.dollop, decoMats.cream); d.scale.set(1, .6, 1); d.position.y = 5; g.add(d);
+    const c = new THREE.Mesh(decoGeo.cream, decoMats.cream); c.position.y = 15; c.rotation.y = .4; g.add(c);
+  }else if(kind === 'star'){
+    const s = new THREE.Mesh(decoGeo.star, decoMats.star); s.position.y = 7; s.scale.set(1.3, 1.3, .6); g.add(s);
+  }else if(kind === 'candle'){
+    const c = new THREE.Mesh(decoGeo.candle, decoMats.candle); c.position.y = 13; g.add(c);
+    const st = new THREE.Mesh(decoGeo.sprinkle, decoMats.sprinkle[0]); st.scale.set(2.1, .25, 2.1); st.position.y = 13; g.add(st);
+    const f = new THREE.Mesh(decoGeo.flame, decoMats.flame); f.scale.set(1, 1.6, 1); f.position.y = 30; g.add(f);
+  }else{
+    const m = makeMacaronMesh(Math.floor(Math.random()*4)); m.scale.setScalar(.55); m.position.y = 9;
+    m.userData.face.visible = Math.random() < .5; g.add(m);
+  }
+  g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true } });
+  const p = decoSpot(); g.position.set(p.x, 0, p.z); g.rotation.y = Math.random()*Math.PI*2;
+  g.userData = {pop:0};
+  scene.add(g); decos.push(g);
+}
+
+// ---- 遊び ----
+let score = 0, gameOver = false, canDrop = true, current = null, nextLv = rnd(), overSteps = 0, px = W/2;
+let combo = 0, comboTimer = 0;
+function showNext(){ $('next').style.background = MAC[nextLv].c; $('next').title = MAC[nextLv].name }
 function spawn(){
-  current=makeMacaron(W/2,55,nextLv,true);
-  nextLv=rnd();
-  World.add(engine.world,current);
-  showNext();
+  current = makeBody(px, DROP_Y, nextLv, true);
+  nextLv = rnd(); Composite.add(world, current); addMacaron(current).userData.pop = .001; showNext();
 }
-function showNext(){const n=document.getElementById('next');const m=MAC[nextLv];n.style.background=m.c;n.title=m.name;}
+function clampX(x){ const r = MAC[current.lv].r + 4; return Math.max(r, Math.min(W - r, x)) }
+function moveTo(x){ if(!current || gameOver) return; px = clampX(x); Body.setPosition(current, {x:px, y:DROP_Y}) }
+function drop(){
+  if(!current || !canDrop || gameOver) return;
+  const lv = current.lv;
+  Body.setStatic(current, false); current = null; canDrop = false;
+  pop3d(MAC[lv].name, null, toWorld(px, DROP_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
+  setTimeout(() => { canDrop = true; spawn() }, 650);
+}
+// 指の位置 → 箱の中の横位置(画面の点から z=0 の面へ光線を飛ばす)
+const ray = new THREE.Raycaster(), plane0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit = new THREE.Vector3();
+function pointerX(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left)/rect.width*2 - 1, -(e.clientY - rect.top)/rect.height*2 + 1), camera);
+  return ray.ray.intersectPlane(plane0, hit) ? hit.x + W/2 : px;
+}
+const cv = renderer.domElement;
+cv.addEventListener('pointermove', e => moveTo(pointerX(e)));
+cv.addEventListener('pointerdown', e => { moveTo(pointerX(e)); if(e.pointerType === 'mouse') drop() });
+cv.addEventListener('pointerup', e => { if(e.pointerType !== 'mouse'){ moveTo(pointerX(e)); drop() } });
 
-let px=W/2;
-function moveTo(x){ if(!current||gameOver)return; const r=MAC[current.lv].r+4; px=Math.max(r,Math.min(W-r,x)); Body.setPosition(current,{x:px,y:55}); }
-function drop(){ if(!current||!canDrop||gameOver)return; Body.setStatic(current,false); current=null; canDrop=false; setTimeout(()=>{canDrop=true; spawn();},650); }
-function getX(e){const rect=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return t.clientX-rect.left;}
-canvas.addEventListener('mousemove',e=>moveTo(getX(e)));
-canvas.addEventListener('mousedown',e=>{moveTo(getX(e));drop();});
-canvas.addEventListener('touchstart',e=>{moveTo(getX(e));e.preventDefault();},{passive:false});
-canvas.addEventListener('touchmove',e=>{moveTo(getX(e));e.preventDefault();},{passive:false});
-canvas.addEventListener('touchend',e=>{drop();e.preventDefault();},{passive:false});
-
-Events.on(engine,'collisionStart',ev=>{
+// ぶつかったら、ぷるんと揺らす
+Events.on(engine, 'collisionStart', ev => {
   for(const p of ev.pairs){
-    const a=p.bodyA,b=p.bodyB;
-    if(a.label!=='mac'||b.label!=='mac'||a.lv!==b.lv||a.merged||b.merged||a.isStatic||b.isStatic)continue;
-    a.merged=b.merged=true;
-    const x=(a.position.x+b.position.x)/2, y=(a.position.y+b.position.y)/2;
-    World.remove(engine.world,[a,b]);
-    if(a.lv===MAC.length-1){ score+=SCORE[a.lv]*4; burst(x,y,MAC[a.lv].c,28); }
-    else { const n=makeMacaron(x,y,a.lv+1); World.add(engine.world,n); Body.setVelocity(n,{x:0,y:-2}); score+=SCORE[a.lv]; burst(x,y,MAC[a.lv+1].c,10); }
-    document.getElementById('score').textContent=score;
+    const rel = Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
+    for(const b of [p.bodyA, p.bodyB]){ const m = meshes.get(b.id); if(m) m.userData.sv += Math.min(2.4, rel*.2) }
   }
 });
 
-const parts=[];
-function burst(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*8,vy:(Math.random()-.5)*8-2,l:30,c});}
-function drawMacaron(ctx,x,y,r,m,ang){
-  ctx.save();ctx.translate(x,y);ctx.rotate(ang);
-  ctx.fillStyle=m.s;ctx.beginPath();ctx.ellipse(0,0,r,r*.55,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle=m.c;ctx.beginPath();ctx.ellipse(0,-r*.22,r,r*.5,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(0,r*.3,r*.95,r*.42,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.45)';ctx.beginPath();ctx.ellipse(-r*.3,-r*.45,r*.3,r*.12,-.3,0,Math.PI*2);ctx.fill();
-  ctx.restore();
+// くっつく判定: 楕円どうしの距離で、触れる少し手前から合体させる
+function reach(b, ux, uy){
+  const r = MAC[b.lv].r, c = Math.cos(b.angle), s = Math.sin(b.angle);
+  const lx = ux*c + uy*s, ly = -ux*s + uy*c;          // 向きを体の座標へ
+  return 1 / Math.sqrt((lx*lx)/(r*r) + (ly*ly)/((r*HALF_H)*(r*HALF_H)));
 }
-Events.on(render,'afterRender',()=>{
-  const ctx=render.context;
-  ctx.strokeStyle='rgba(230,80,120,.6)';ctx.setLineDash([8,6]);ctx.beginPath();ctx.moveTo(0,LINE);ctx.lineTo(W,LINE);ctx.stroke();ctx.setLineDash([]);
-  let over=false;
-  for(const b of Composite.allBodies(engine.world)){
-    if(b.label!=='mac')continue;
-    drawMacaron(ctx,b.position.x,b.position.y,MAC[b.lv].r,MAC[b.lv],b.angle);
-    if(!b.isStatic&&b.position.y-MAC[b.lv].r<LINE&&Math.abs(b.velocity.y)<.2)over=true;
+function mergeStep(){
+  const list = Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.merged);
+  for(let i = 0; i < list.length; i++) for(let j = i + 1; j < list.length; j++){
+    const a = list[i], b = list[j];
+    if(a.lv !== b.lv || a.merged || b.merged) continue;
+    const dx = b.position.x - a.position.x, dy = b.position.y - a.position.y, d = Math.hypot(dx, dy) || 1;
+    if(d > reach(a, dx/d, dy/d) + reach(b, -dx/d, -dy/d) + MAC[a.lv].r*MERGE_SLACK) continue;
+    merge(a, b);
   }
-  for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.l--;ctx.globalAlpha=p.l/30;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();if(p.l<=0)parts.splice(i,1);}
-  ctx.globalAlpha=1;
-  overTimer=over?overTimer+1:0;
-  if(overTimer>90&&!gameOver){
-    gameOver=true;
-    const got=Yuki.earn(GAME_ID,score);
-    document.getElementById('final').textContent=score;
-    document.getElementById('got').textContent='+'+Yuki.yen(got);
-    document.getElementById('yen').textContent=Yuki.yen(Yuki.state.yen);
-    if(Yuki.hasPerk(GAME_ID))document.getElementById('perkNote').textContent='株主優待で1.2倍になりました';
-    document.getElementById('over').style.display='flex';
+}
+function merge(a, b){
+  a.merged = b.merged = true;
+  const x = (a.position.x + b.position.x)/2, y = (a.position.y + b.position.y)/2, lv = a.lv;
+  Composite.remove(world, [a, b]); removeMacaron(a); removeMacaron(b);
+  combo = comboTimer > 0 ? combo + 1 : 1; comboTimer = 75;
+  const at = toWorld(x, y);
+  if(lv === MAC.length - 1){
+    const pts = SCORE[lv]*4; score += pts;
+    burst(at, MAC[lv].s, 60, 2.2);
+    pop3d('いちごパーティ！', `+${pts}`, at, 44, '#ff3d8b');
+    shake = 14;
+  }else{
+    const n = makeBody(x, y, lv + 1); Composite.add(world, n);
+    Body.setVelocity(n, {x:0, y:-2});
+    const m = addMacaron(n); m.userData.pop = 0.001;
+    const pts = SCORE[lv]; score += pts;
+    burst(at, MAC[lv+1].c, 10 + lv*4, 1 + lv*.15);
+    pop3d(`${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
+    if(lv >= 5) shake = 4 + lv;
   }
-});
+  $('score').textContent = score;
+  $('score').classList.remove('bump'); void $('score').offsetWidth; $('score').classList.add('bump');
+}
+
+let shake = 0;
+function physicsStep(){
+  Engine.update(engine, 1000/60);
+  mergeStep();
+  if(comboTimer > 0) comboTimer--;
+  let over = false;
+  for(const b of Composite.allBodies(world)){
+    if(b.label !== 'mac' || b.isStatic) continue;
+    if(b.position.y - MAC[b.lv].r*HALF_H < LINE && Math.abs(b.velocity.y) < .2) over = true;
+  }
+  overSteps = over ? overSteps + 1 : 0;
+  if(overSteps > 90 && !gameOver) endGame();
+  const want = Math.min(DECO_MAX, Math.floor(score / DECO_STEP));
+  if(decos.length < want){
+    makeDeco(decos.length);
+    if(decos.length % 20 === 0) pop3d('お皿がにぎやかに！', `飾り ${decos.length}個`, new THREE.Vector3(0, 40, DEPTH/2 + 40), 26, '#ffd23f');
+  }
+}
+function endGame(){
+  gameOver = true;
+  const got = Yuki.earn(GAME_ID, score);
+  $('final').textContent = score;
+  $('got').textContent = '+' + Yuki.yen(got);
+  $('yen').textContent = Yuki.yen(Yuki.state.yen);
+  if(Yuki.hasPerk(GAME_ID)) $('perkNote').textContent = '株主優待で1.2倍になりました';
+  $('over').style.display = 'flex';
+}
+
+// ---- 毎こま ----
+// 0→1 で、少し行き過ぎてから戻る(ぽんっと出る)
+const backOut = k => { const c = 2.2; return 1 + (c + 1)*Math.pow(k - 1, 3) + c*Math.pow(k - 1, 2) };
+let last = performance.now(), acc = 0;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function frame(now){
+  const dt = Math.min(.05, (now - last)/1000); last = now;
+  acc += dt*1000;
+  let steps = 0;
+  while(acc >= 1000/60 && steps < 3){ if(!gameOver) physicsStep(); acc -= 1000/60; steps++ }
+  if(steps === 3) acc = 0;
+
+  for(const b of Composite.allBodies(world)){
+    if(b.label !== 'mac') continue;
+    const m = meshes.get(b.id); if(!m) continue;
+    m.position.copy(toWorld(b.position.x, b.position.y));
+    m.rotation.z = -b.angle;
+    const u = m.userData;
+    // ばねで、ぷるん
+    u.sv += (-260*u.sq - 8*u.sv)*dt; u.sq += u.sv*dt;
+    u.sq = Math.max(-.32, Math.min(.32, u.sq));
+    u.t += dt;
+    const idle = reduce ? 0 : Math.sin(u.t*3.2)*.018;
+    let s = 1;
+    if(u.pop > 0 && u.pop < 1){ u.pop = Math.min(1, u.pop + dt*3.2); s = backOut(u.pop) }
+    const sq = u.sq + idle;
+    m.children[0].scale.set(s*(1 + sq*.55), s*(1 - sq), s*(1 + sq*.55));
+  }
+  for(let i = bits.length - 1; i >= 0; i--){
+    const p = bits[i], u = p.userData;
+    p.position.addScaledVector(u.v, dt*60*.6); u.v.y -= dt*60*.32;
+    p.rotation.x += u.spin.x; p.rotation.y += u.spin.y;
+    u.life -= dt*1.1;
+    if(p.position.y < 2){ p.position.y = 2; u.v.multiplyScalar(.4); u.v.y = Math.abs(u.v.y) }
+    p.scale.multiplyScalar(u.life > .3 ? 1 : .9);
+    if(u.life <= 0){ scene.remove(p); bits.splice(i, 1) }
+  }
+  for(const d of decos){
+    const u = d.userData;
+    if(u.pop < 1){ u.pop = Math.min(1, u.pop + dt*2.5); d.scale.setScalar(backOut(u.pop)) }
+  }
+  if(shake > 0 && !reduce){
+    fit(); camera.position.x += (Math.random()-.5)*shake; camera.position.y += (Math.random()-.5)*shake; shake *= .85;
+    if(shake < .3){ shake = 0; fit() }
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
 spawn();
+requestAnimationFrame(frame);
+window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length }};
 </script>
 </body>
 </html>
