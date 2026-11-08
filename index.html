@@ -41,6 +41,14 @@
   #over .got{font-size:30px;color:var(--pink)}
   #err{display:none;padding:24px;text-align:center}
 
+  /* 花吹雪 */
+  .petal{position:absolute;top:-24px;width:12px;height:9px;border-radius:70% 0 70% 0;opacity:.95;
+    animation:petal 2.4s cubic-bezier(.3,.6,.5,1) forwards}
+  @keyframes petal{
+    0%{transform:translate(0,0) rotate(0)}
+    50%{transform:translate(calc(var(--dx)*-.5),50vh) rotate(calc(var(--rot)*.5))}
+    100%{transform:translate(var(--dx),105vh) rotate(var(--rot));opacity:.2}}
+
   /* タイトルとアイテム交換(ゲームオーバーと同じ重ね方) */
   .layer{position:fixed;inset:0;background:rgba(27,20,70,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:31}
   .layer .panel{width:min(380px,100%);max-height:100%;overflow:auto;padding:28px 24px;text-align:center;display:flex;flex-direction:column;gap:12px}
@@ -88,6 +96,12 @@
   <button class="btn" id="startBtn">スタート</button>
   <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
 </div></div>
+<div id="cycle" class="layer"><div class="panel">
+  <h2 id="cycleTitle">ステージ3クリア！</h2>
+  <p class="note" id="cycleNote"></p>
+  <button class="btn" id="cycleGo">続ける</button>
+  <button class="btn sub" id="cycleEnd">ここで終える</button>
+</div></div>
 <div id="shop" class="layer"><div class="panel">
   <h2>アイテム交換</h2>
   <p>交換に使える面数 <b id="shopPts" class="num">0</b>面</p>
@@ -106,17 +120,19 @@ const $ = id => document.getElementById(id);
 Yuki.ready.then(() => $('yen').textContent = Yuki.yen(Yuki.state.yen));
 
 // ---- ルール(第1段階の仕様) ----
-const W = 420, H = 620, LINE = 110, DROP_Y = 55;
+// 抱える高さ DROP_Y は、2倍のマカロンと雲が画面の上で切れないよう 55 → 85 に下げた
+const W = 420, H = 620, LINE = 110, DROP_Y = 85;
 const MAC = [
-  {name:'ミント',     r:18, c:'#9fe3c8', s:'#5fbf9c'},
-  {name:'レモン',     r:24, c:'#fff09a', s:'#e6c84a'},
-  {name:'ピスタチオ', r:31, c:'#c6e39b', s:'#8fbf5a'},
-  {name:'ラベンダー', r:39, c:'#d5c3ee', s:'#a58bd6'},
-  {name:'オレンジ',   r:48, c:'#ffc48a', s:'#f08f3a'},
-  {name:'チョコ',     r:58, c:'#b98564', s:'#7d5236'},
-  {name:'キャラメル', r:69, c:'#e3b36e', s:'#b9803a'},
-  {name:'バニラ',     r:81, c:'#fff4dc', s:'#dcc08e'},
-  {name:'いちご',     r:95, c:'#ff9bb8', s:'#e4587f'},
+  // 大きさは2倍(2026-11-08本人「マカロンの大きさを2倍に」)。いちご(幅380)まで箱の幅420に収まる
+  {name:'ミント',     r:36,  c:'#9fe3c8', s:'#5fbf9c'},
+  {name:'レモン',     r:48,  c:'#fff09a', s:'#e6c84a'},
+  {name:'ピスタチオ', r:62,  c:'#c6e39b', s:'#8fbf5a'},
+  {name:'ラベンダー', r:78,  c:'#d5c3ee', s:'#a58bd6'},
+  {name:'オレンジ',   r:96,  c:'#ffc48a', s:'#f08f3a'},
+  {name:'チョコ',     r:116, c:'#b98564', s:'#7d5236'},
+  {name:'キャラメル', r:138, c:'#e3b36e', s:'#b9803a'},
+  {name:'バニラ',     r:162, c:'#fff4dc', s:'#dcc08e'},
+  {name:'いちご',     r:190, c:'#ff9bb8', s:'#e4587f'},
 ];
 const SCORE = [1,3,6,10,15,21,28,36,45];
 const HALF_H = 0.6;           // マカロンの厚みの半分(半径に対する比)
@@ -203,13 +219,27 @@ dash.computeLineDistances(); scene.add(dash);
 const band = new THREE.Mesh(new THREE.PlaneGeometry(W, DEPTH), new THREE.MeshBasicMaterial({color:0xff3d8b, transparent:true, opacity:.12, side:THREE.DoubleSide, depthWrite:false}));
 band.rotation.x = -Math.PI/2; band.position.y = lineY; scene.add(band);
 
+const JELLY = {value:0};   // 表面の波の時刻(毎こま進める)
 // マカロンの形(段階ごとに部品を作り置き)
 const PARTS = MAC.map(m => {
   const shell = new THREE.MeshPhysicalMaterial({color:m.c, roughness:.5, clearcoat:.35, clearcoatRoughness:.5, sheen:.6, sheenColor:new THREE.Color('#ffffff')});
   const foot = new THREE.MeshStandardMaterial({color:m.s, roughness:.85});
   const cream = new THREE.MeshStandardMaterial({color:new THREE.Color(m.c).lerp(new THREE.Color('#ffffff'), .62), roughness:.7});
+  for(const mat of [shell, cream]) jelly(mat);
   return {shell, foot, cream};
 });
+// 表面をゆっくり波打たせて、ゼリーのようにぷるぷる・とろっと見せる(2026-11-08本人「もっと流体のようにプルプルドロドロして欲しい」)
+// 形の点を、時間と位置で決まる波の分だけ外へ押し出す。物理の形は変えない
+function jelly(mat){
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uJelly = JELLY;
+    sh.vertexShader = 'uniform float uJelly;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>
+      float jw = sin(position.x*3.2 + uJelly*1.8) * sin(position.z*2.8 + uJelly*1.4) + 0.6*sin(position.y*5.0 - uJelly*2.6);
+      transformed += normal * jw * 0.06;
+      transformed.y -= 0.05 * (1.0 - position.y*position.y);`);
+  };
+}
 const geo = {
   shell: new THREE.SphereGeometry(1, 48, 24),
   foot: new THREE.TorusGeometry(.9, .09, 10, 48),
@@ -240,13 +270,35 @@ function makeMacaronMesh(lv){
   }
   const mo = new THREE.Mesh(geo.mouth, inkMat); mo.scale.setScalar(r*.07); mo.rotation.z = Math.PI; mo.position.set(0, r*.33, r*.96); face.add(mo);
   jig.add(face);
-  outer.userData = {sq:0, sv:0, pop:0, t:Math.random()*10, face};
+  outer.userData = {sq:0, sv:0, w:0, wv:0, lvx:0, pop:0, t:Math.random()*10, face};
   return outer;
 }
 const meshes = new Map();   // body.id → 立体
 function addMacaron(b){ const m = makeMacaronMesh(b.lv); meshes.set(b.id, m); scene.add(m); return m }
 function removeMacaron(b){ const m = meshes.get(b.id); if(m){ scene.remove(m); meshes.delete(b.id) } }
 const toWorld = (x, y) => new THREE.Vector3(x - W/2, H - y, 0);
+
+// マカロンを落とす雲のキャラクター(2026-11-08本人「マカロンを落とす雲みたいなキャラクターを置いてみて」)
+// 指の位置に合わせて左右へついて動き、落とすときにぽよんと弾む
+const cloud = new THREE.Group(), cloudBody = new THREE.Group();
+cloud.add(cloudBody);
+{
+  const puff = new THREE.MeshPhysicalMaterial({color:0xffffff, roughness:.6, sheen:1, sheenColor:new THREE.Color('#dff3ff'), clearcoat:.2});
+  for(const [x, y, z, r] of [[0,6,0,26],[-24,0,2,19],[24,0,2,19],[-12,12,-6,18],[13,13,-6,17],[-36,-6,0,12],[36,-6,0,12],[0,-6,6,20]]){
+    const s = new THREE.Mesh(geo.eye, puff); s.scale.setScalar(r); s.position.set(x, y, z); s.castShadow = true; cloudBody.add(s);
+  }
+  for(const sx of [-1, 1]){
+    const e = new THREE.Mesh(geo.eye, inkMat); e.scale.set(3.2, 4.2, 2); e.position.set(sx*9, 6, 25); cloudBody.add(e);
+    const hl = new THREE.Mesh(geo.eye, new THREE.MeshBasicMaterial({color:0xffffff})); hl.scale.setScalar(1.2); hl.position.set(sx*9 - 1, 7.6, 27); cloudBody.add(hl);
+    const bl = new THREE.Mesh(geo.eye, blushMat); bl.scale.set(5, 2.4, 1.2); bl.position.set(sx*18, 0, 23); cloudBody.add(bl);
+  }
+  const mo = new THREE.Mesh(geo.mouth, inkMat); mo.scale.setScalar(3.4); mo.rotation.z = Math.PI; mo.position.set(0, 1, 26.5); cloudBody.add(mo);
+}
+cloud.position.set(0, H - 2, 0);
+cloud.scale.setScalar(1.5);   // マカロンを2倍にしたので、抱えて見える大きさに合わせる
+cloud.userData = {kick:0, t:0, y:H - DROP_Y + 64};
+scene.add(cloud);
+function cloudDrop(){ cloud.userData.kick = 1 }
 
 // ---- 画面の大きさ ----
 function fit(){
@@ -378,13 +430,47 @@ function stageStep(){
   if(--stepsLeft > 0){ showStage(); return }
   // 時間が来た: ノルマを超えていれば次の周へ、超えていなければゲームオーバー
   if(got > q){
-    pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 40, '#ffd23f');
+    // クリア: 「ステージNクリア！」と花吹雪(2026-11-08本人)
+    pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
+    petals();
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
     showStage();
+    // 3ステージで一区切り。続けるか、ここで終えるかを聞く(2026-11-08本人「ワンサイクル3ステージで一旦タイトルに戻るか続けるかを聞く」)
+    if((stage - 1) % CYCLE === 0){ paused = true; setTimeout(askCycle, 1400) }
   }else{
     stepsLeft = 0; showStage();
     endGame('time');
+  }
+}
+const CYCLE = 3;
+let paused = false;
+function askCycle(){
+  if(gameOver) return;
+  $('cycleTitle').textContent = `ステージ${stage - 1}クリア！`;
+  $('cycleNote').textContent = `ここまでのスコア ${score}。続けると次はステージ${stage}(ノルマ ${quotaNow()}点)です。ここで終えると、円とクリアした${stage - 1}面を受け取ってタイトルへ戻れます。`;
+  $('cycle').style.display = 'flex';
+}
+$('cycleGo').onclick = () => {
+  $('cycle').style.display = 'none'; paused = false;
+  if(!current && !falling){ canDrop = true; spawn() }
+};
+$('cycleEnd').onclick = () => { $('cycle').style.display = 'none'; endGame('cycle') };
+// 花吹雪: 画面の上から花びらを舞い落とす(飾りなので、動きを減らす設定のときは出さない)
+function petals(){
+  if(reduce) return;
+  const colors = ['#ff9bb8', '#ffc8d8', '#fff0f5', '#ffd23f', '#d5c3ee'];
+  for(let i = 0; i < 46; i++){
+    const el = document.createElement('i');
+    el.className = 'petal';
+    el.style.left = Math.random()*100 + '%';
+    el.style.background = colors[i % colors.length];
+    el.style.setProperty('--dx', (Math.random()*160 - 80) + 'px');
+    el.style.setProperty('--rot', (Math.random()*720 - 360) + 'deg');
+    el.style.animationDuration = (1.8 + Math.random()*1.6) + 's';
+    el.style.animationDelay = (Math.random()*.6) + 's';
+    $('fx').append(el);
+    setTimeout(() => el.remove(), 4200);
   }
 }
 function rush(){
@@ -405,11 +491,19 @@ function spawn(){
 function clampX(x){ const r = MAC[current.lv].r + 4; return Math.max(r, Math.min(W - r, x)) }
 function moveTo(x){ if(!current || gameOver) return; px = clampX(x); Body.setPosition(current, {x:px, y:DROP_Y}) }
 function drop(){
-  if(!current || !canDrop || gameOver) return;
+  if(!current || !canDrop || gameOver || paused) return;
   const lv = current.lv;
-  Body.setStatic(current, false); current = null; canDrop = false; started = true;
+  Body.setStatic(current, false); falling = current; current = null; canDrop = false; started = true;
+  cloudDrop();
   pop3d(MAC[lv].name, null, toWorld(px, DROP_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
-  setTimeout(() => { canDrop = true; spawn() }, 650);
+  // 連打で勝てないよう、落としたマカロンが何かに着地してから次を出す(2026-11-08本人「連打ゲームになってる」)
+  clearTimeout(landTimer); landTimer = setTimeout(landed, 1600);
+}
+let falling = null, landTimer = 0;
+function landed(){
+  if(!falling) return;
+  falling = null; clearTimeout(landTimer);
+  setTimeout(() => { if(gameOver || paused) return; canDrop = true; spawn() }, 280);
 }
 // 指の位置 → 箱の中の横位置(画面の点から z=0 の面へ光線を飛ばす)
 const ray = new THREE.Raycaster(), plane0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit = new THREE.Vector3();
@@ -426,8 +520,9 @@ cv.addEventListener('pointerup', e => { if(e.pointerType !== 'mouse'){ moveTo(po
 // ぶつかったら、ぷるんと揺らす
 Events.on(engine, 'collisionStart', ev => {
   for(const p of ev.pairs){
-    const rel = Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
-    for(const b of [p.bodyA, p.bodyB]){ const m = meshes.get(b.id); if(m) m.userData.sv += Math.min(2.4, rel*.2) }
+    if(falling && (p.bodyA === falling || p.bodyB === falling)) landed();
+    const rel =Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
+    for(const b of [p.bodyA, p.bodyB]){ const m = meshes.get(b.id); if(m) m.userData.sv += Math.min(3.2, rel*.32) }
   }
 });
 
@@ -495,8 +590,9 @@ function physicsStep(){
 }
 async function endGame(why){
   gameOver = true;
-  $('overTitle').textContent = why === 'time' ? 'タイムアップ' : 'ゲームオーバー';
-  $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。` : 'マカロンが線の上まであふれました。')
+  $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' ? 'おつかれさま！' : 'ゲームオーバー';
+  $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
+    : why === 'cycle' ? '' : 'マカロンが線の上まであふれました。')
     + (stage > 1 ? `ステージ${stage - 1}までクリア。` : '');
   // 2周目以降で終わったら、クリアした面数を交換の点にして、アイテム交換の画面へ行けるようにする(2026-11-08本人)
   if(stage > 1){
@@ -588,8 +684,9 @@ const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 function frame(now){
   const dt = Math.min(.05, (now - last)/1000); last = now;
   acc += dt*1000;
+  if(!reduce) JELLY.value += dt;
   let steps = 0;
-  while(acc >= 1000/60 && steps < 3){ if(!gameOver) physicsStep(); acc -= 1000/60; steps++ }
+  while(acc >= 1000/60 && steps < 3){ if(!gameOver && !paused) physicsStep(); acc -= 1000/60; steps++ }
   if(steps === 3) acc = 0;
 
   for(const b of Composite.allBodies(world)){
@@ -598,15 +695,39 @@ function frame(now){
     m.position.copy(toWorld(b.position.x, b.position.y));
     m.rotation.z = -b.angle;
     const u = m.userData;
-    // ばねで、ぷるん
-    u.sv += (-260*u.sq - 8*u.sv)*dt; u.sq += u.sv*dt;
-    u.sq = Math.max(-.32, Math.min(.32, u.sq));
+    // 柔らかいばねで、ぷるんぷるん(固さ・減衰を下げて、長く大きく揺らす)
+    // 止まっているときは少しとろけて平たくなる(ばねの落ち着き先を 0 ではなく少し平たい側に置く)
+    const still = Math.hypot(b.velocity.x, b.velocity.y) < .4 && !b.isStatic;
+    const rest = still ? .07 : 0;
+    // やわらかさはプリンくらい(2026-11-08本人): ゆっくり大きく揺れ、なかなか止まらない
+    u.sv += (-55*(u.sq - rest) - 1.4*u.sv)*dt; u.sq += u.sv*dt;
+    u.sq = Math.max(-.5, Math.min(.5, u.sq));
+    // 横のゆらぎ: 横の速さが変わった分だけ、ぐにゃっと傾く
+    const vx = b.velocity.x, dvx = vx - u.lvx; u.lvx = vx;
+    u.wv += (-40*u.w - 1.2*u.wv)*dt - dvx*1.2; u.w = Math.max(-.38, Math.min(.38, u.w + u.wv*dt));
     u.t += dt;
-    const idle = reduce ? 0 : Math.sin(u.t*3.2)*.018;
+    const idle = reduce ? 0 : Math.sin(u.t*3.2)*.03;
     let s = 1;
     if(u.pop > 0 && u.pop < 1){ u.pop = Math.min(1, u.pop + dt*3.2); s = backOut(u.pop) }
     const sq = u.sq + idle;
-    m.children[0].scale.set(s*(1 + sq*.55), s*(1 - sq), s*(1 + sq*.55));
+    const jig = m.children[0];
+    jig.scale.set(s*(1 + sq*.6), s*(1 - sq), s*(1 + sq*.6));
+    jig.rotation.z = reduce ? 0 : u.w;
+  }
+  { // 雲: 抱えているマカロンの真上について動き、ふわふわ浮き、落とすときにぽよんと弾む
+    const u = cloud.userData, tx = px - W/2;
+    u.t += dt;
+    const lean = Math.max(-.25, Math.min(.25, (tx - cloud.position.x)*-.02));
+    cloud.position.x = tx;
+    u.lean = (u.lean ?? 0) + (lean - (u.lean ?? 0))*Math.min(1, dt*8);
+    u.kick = Math.max(0, u.kick - dt*2.6);
+    const k = Math.sin(u.kick*Math.PI)*.22;
+    cloudBody.scale.set(1 + k, 1 - k, 1 + k);
+    cloudBody.rotation.z = u.lean;
+    // 抱えているマカロンの上の面のすぐ上に浮く(大きいほど高く)
+    const holdTop = current ? MAC[current.lv].r*HALF_H : 24;
+    u.y += ((H - DROP_Y + holdTop + 40) - u.y)*Math.min(1, dt*10);
+    cloud.position.y = u.y + (reduce ? 0 : Math.sin(u.t*2.2)*3) + k*14;
   }
   for(let i = bits.length - 1; i >= 0; i--){
     const p = bits[i], u = p.userData;
