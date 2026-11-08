@@ -935,9 +935,9 @@ async function endGame(why){
   $('got').textContent = '…';
   $('over').style.display = 'flex';
   await Yuki.ready;
-  // サーバーは1回3万点を超える記録を受け付けない(api/config.php の maxScore)。点が雪だるま式に増える形にしたので、超えた分は3万点として送る
-  // 円への換算をどうするかは本人の判断待ち(2026-11-08)
-  const r = await Yuki.earn(GAME_ID, Math.min(score, 30000));
+  // 円へ送る点は、雪だるま式の点を前の尺(数百〜数千点)くらいに縮める(2026-11-09本人「点を縮めて送る」)。サーバー(api/config.php)は触らない
+  // 1千点→約1千、1万4千点→約2千、100万点→約4千、10億点→約7千。サーバーの上限3万点には届かないが、念のため止める
+  const r = await Yuki.earn(GAME_ID, Math.min(30000, Math.round(300*Math.log2(1 + score/100))));
   if(r.error){
     $('got').textContent = '0円';
     $('perkNote').textContent = r.error === 'too_fast' ? '記録は20秒に1回までです。' : '円を記録できませんでした。通信を確かめてください。';
