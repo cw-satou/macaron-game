@@ -17,6 +17,9 @@
   #shakeBtn{position:absolute;right:12px;bottom:14px;z-index:5;font:inherit;font-size:var(--fs-s);font-weight:800;min-height:48px;padding:0 18px;
     border:var(--line) solid var(--ink);border-radius:var(--r-pill);background:var(--sun);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;white-space:nowrap}
   #shakeBtn:disabled{opacity:.4}
+  /* 音のボタン: 遊ぶ場所の左下 */
+  #muteBtn{position:absolute;left:12px;bottom:14px;z-index:5;width:48px;height:48px;font-size:22px;line-height:1;
+    border:var(--line) solid var(--ink);border-radius:50%;background:#fff;box-shadow:var(--shadow);cursor:pointer}
   #time.hurry{color:#e8204f;animation:bump .5s ease infinite}
   @media (max-width:560px){ #hud{gap:12px} #hud .lbl{margin-right:.15em} #score,#quota,#time{font-size:var(--fs-m)} #hud .lbl-next{display:none} }
   #score.bump{animation:bump .3s ease}
@@ -88,7 +91,7 @@
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span>
   <span><span class="lbl lbl-next">ネクスト</span><span id="next"></span></span>
 </div>
-<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2 id="overTitle">ゲームオーバー</h2>
@@ -108,6 +111,7 @@
   <p class="note" id="titleItems"></p>
   <button class="btn" id="startBtn">スタート</button>
   <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
+  <p class="note" style="font-size:var(--fs-xs)">音楽 MintoDog「Cozy Puzzle」・効果音 Kenney(どちらも CC0)</p>
 </div></div>
 <div id="cycle" class="layer"><div class="panel">
   <h2 id="cycleTitle">ステージ一覧</h2>
@@ -132,6 +136,48 @@ import * as THREE from 'three';
 const GAME_ID = 'macaron-game';
 const $ = id => document.getElementById(id);
 Yuki.ready.then(() => $('yen').textContent = Yuki.yen(Yuki.state.yen));
+
+// ---- 音(2026-11-08本人「小さめの音でBGM、あと効果音入れられますか。著作権フリーのサイトから持ってきて」) ----
+// BGM=「Cozy Puzzle In-Game 2」MintoDog(CC0, OpenGameArt)、効果音=「Interface Sounds」Kenney(CC0)。mp3 に変えて sounds/ に置いた
+// スマホは画面に触れるまで音を出せないので、スタートを押したときに鳴らし始める。消した状態は端末に覚えておく
+const Sound = (() => {
+  const NAMES = ['drop', 'merge', 'grow', 'rush', 'clear', 'shake', 'over', 'click'];
+  const BGM_VOL = .16, SE_VOL = .5;
+  let ctx = null, master = null, bgmGain = null, bgmSrc = null, bgmBuf = null;
+  const bufs = {};
+  let muted = localStorage.getItem('yuki-macaron-mute') === '1';
+  async function load(name){
+    const res = await fetch(`sounds/${name}.mp3`);
+    return ctx.decodeAudioData(await res.arrayBuffer());
+  }
+  function start(){
+    if(ctx){ ctx.resume(); return }
+    const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return;
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ctx.destination);
+    bgmGain = ctx.createGain(); bgmGain.gain.value = BGM_VOL; bgmGain.connect(master);
+    for(const n of NAMES) load(n).then(b => bufs[n] = b).catch(() => {});
+    load('bgm').then(b => { bgmBuf = b; playBgm() }).catch(() => {});
+  }
+  function playBgm(){
+    if(!ctx || !bgmBuf || bgmSrc) return;
+    bgmSrc = ctx.createBufferSource(); bgmSrc.buffer = bgmBuf; bgmSrc.loop = true;
+    bgmSrc.connect(bgmGain); bgmSrc.start();
+  }
+  function play(name, rate = 1, vol = 1){
+    if(!ctx || !bufs[name]) return;
+    const s = ctx.createBufferSource(), g = ctx.createGain();
+    s.buffer = bufs[name]; s.playbackRate.value = rate; g.gain.value = SE_VOL*vol;
+    s.connect(g); g.connect(master); s.start();
+  }
+  function bgmDown(){ if(bgmGain) bgmGain.gain.setTargetAtTime(BGM_VOL*.35, ctx.currentTime, .4) }
+  function toggle(){
+    muted = !muted; localStorage.setItem('yuki-macaron-mute', muted ? '1' : '0');
+    if(master) master.gain.value = muted ? 0 : 1;
+    return muted;
+  }
+  return {start, play, bgmDown, toggle, get muted(){ return muted }};
+})();
 
 // ---- ルール(第1段階の仕様) ----
 // 抱える高さ DROP_Y は、2倍のマカロンと雲が画面の上で切れないよう 55 → 85 に下げた
@@ -446,7 +492,7 @@ function stageStep(){
   if(got > q){
     // クリア: 「ステージNクリア！」と花吹雪(2026-11-08本人)
     pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
-    petals();
+    petals(); Sound.play('clear', 1, 1.2);
     stageLog.push({got, q});
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
@@ -463,7 +509,7 @@ function stageStep(){
 function shakeCase(){
   if(gameOver || paused || $('title').style.display !== 'none') return;
   $('shakeBtn').disabled = true; setTimeout(() => $('shakeBtn').disabled = false, 1500);
-  shake = 10;
+  shake = 10; Sound.play('shake');
   [1, -1, 1, -1].forEach((dir, i) => setTimeout(() => {
     for(const b of Composite.allBodies(world)){
       if(b.label !== 'mac' || b.isStatic) continue;
@@ -473,6 +519,12 @@ function shakeCase(){
   }, i*130));
 }
 $('shakeBtn').onclick = shakeCase;
+const showMute = () => { $('muteBtn').textContent = Sound.muted ? '🔇' : '🔊'; $('muteBtn').setAttribute('aria-label', Sound.muted ? '音を出す' : '音を消す') };
+$('muteBtn').onclick = () => { Sound.start(); Sound.toggle(); showMute() };
+showMute();
+// 画面のボタンを押したときの小さな音
+for(const id of ['cycleGo', 'cycleEnd', 'titleShop', 'overShop', 'shopBack']) $(id).addEventListener('click', () => Sound.play('click'));
+$('shopList').addEventListener('click', e => { if(e.target.closest('button')) Sound.play('click') });
 
 const CYCLE = 3;
 let paused = false;
@@ -516,6 +568,7 @@ function petals(){
 }
 function rush(){
   const lv = DROP_LVS - 1, r = MAC[lv].r;
+  Sound.play('rush', 1, 1.2);
   pop3d('マカロンラッシュ！', `${MAC[lv].name} ×${RUSH_N}`, new THREE.Vector3(0, H*.62, DEPTH/2 + 20), 42, MAC[lv].c);
   shake = 5;
   // 2倍の大きさでは横に散らすと8個で箱が埋まったので、真ん中あたりに順に重ねて落とし、くっついて育つ連鎖にする
@@ -537,6 +590,7 @@ function drop(){
   const lv = current.lv;
   Body.setStatic(current, false); current = null; canDrop = false; started = true;
   cloudDrop();
+  Sound.play('drop', .92 + Math.random()*.16);
   pop3d(MAC[lv].name, null, toWorld(px, DROP_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
   // 連打は止めない。代わりに、抱えているマカロンと同じ種類を箱の中で光らせて、狙って落とすほうが得だと分かるようにする
   // (2026-11-08本人「連打できないようにするんじゃなくて、したら良くないとわかるように。ツモったマカロンと同じマカロンを光らせる」)
@@ -585,6 +639,9 @@ function merge(a, b){
   const x = (a.position.x + b.position.x)/2, y = (a.position.y + b.position.y)/2, lv = a.lv;
   Composite.remove(world, [a, b]); removeMacaron(a); removeMacaron(b);
   combo = comboTimer > 0 ? combo + 1 : 1; comboTimer = 75;
+  // くっつく音: 大きく育つほど・コンボが続くほど高くする
+  if(lv >= 4) Sound.play('grow', .9 + (lv - 4)*.06);
+  else Sound.play('merge', 1 + lv*.1 + Math.min(combo - 1, 6)*.05);
   const at = toWorld(x, y);
   if(lv === MAC.length - 1){
     const pts = SCORE[lv]*4; score += pts;
@@ -626,6 +683,7 @@ function physicsStep(){
 }
 async function endGame(why){
   gameOver = true;
+  Sound.play(why === 'cycle' ? 'clear' : 'over'); Sound.bgmDown();
   $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' ? 'おつかれさま！' : 'ゲームオーバー';
   $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
     : why === 'cycle' ? '' : 'マカロンが線の上まであふれました。')
@@ -695,6 +753,7 @@ function showShop(){
   $('over').style.display = 'none'; $('title').style.display = 'none'; $('shop').style.display = 'flex';
 }
 function startGame(){
+  Sound.start(); Sound.play('click');
   // 持っているアイテムを1つずつ使う
   const s = loadBag(), used = [];
   if(s.items.hourglass > 0){ s.items.hourglass--; extraSec = 10; used.push('⏳砂時計') }
