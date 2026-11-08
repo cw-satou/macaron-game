@@ -11,7 +11,7 @@
   #hud{display:flex;justify-content:center;gap:clamp(10px,4vw,24px);padding:8px;align-items:center;font-weight:800;height:52px;white-space:nowrap}
   #hud .lbl{font-size:var(--fs-xs);color:var(--ink-soft);margin-right:.3em}
   #score,#quota,#time{font-size:var(--fs-l);display:inline-block}
-  #stageLbl{margin-right:.5em}
+  #hud #stageLbl{margin-right:.5em}
   #quota.done{color:var(--pink)}
   #time.hurry{color:#e8204f;animation:bump .5s ease infinite}
   @media (max-width:560px){ #hud{gap:12px} #hud .lbl{margin-right:.15em} #score,#quota,#time{font-size:var(--fs-m)} #hud .lbl-next{display:none} }
@@ -40,6 +40,20 @@
   #over h2{font-size:var(--fs-xl)}
   #over .got{font-size:30px;color:var(--pink)}
   #err{display:none;padding:24px;text-align:center}
+
+  /* タイトルとアイテム交換(ゲームオーバーと同じ重ね方) */
+  .layer{position:fixed;inset:0;background:rgba(27,20,70,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:31}
+  .layer .panel{width:min(380px,100%);max-height:100%;overflow:auto;padding:28px 24px;text-align:center;display:flex;flex-direction:column;gap:12px}
+  .layer .kicker{font-size:var(--fs-xs);font-weight:800;color:var(--ink-soft)}
+  .layer .ttl{font-size:var(--fs-hero);line-height:1.05;color:var(--pink);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;
+    text-shadow:2px 2px 0 var(--ink),4px 4px 0 var(--ink)}
+  .layer h2{font-size:var(--fs-xl)}
+  #shopList{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;text-align:left}
+  #shopList li{display:flex;align-items:center;gap:10px;border:var(--line) solid var(--ink);border-radius:14px;padding:10px 12px;background:#fff}
+  #shopList .ic{font-size:28px}
+  #shopList .tx{flex:1;font-size:var(--fs-s);line-height:1.5}
+  #shopList .tx b{display:block;font-size:var(--fs-m)}
+  #shopList button{min-height:44px;padding:0 14px;font-size:var(--fs-s)}
 </style>
 </head>
 <body>
@@ -62,8 +76,24 @@
   <p>もらえた円<br><b id="got" class="got num">0円</b></p>
   <p class="note" id="perkNote"></p>
   <button class="g-login" id="overLogin" data-yuki-login style="display:none;align-self:center">Googleでログイン</button>
-  <button class="btn" onclick="location.reload()">もう一回</button>
+  <button class="btn sub" id="overShop" style="display:none">アイテムと交換する</button>
+  <button class="btn" onclick="location.reload()">タイトルへ</button>
   <a class="btn sub" href="../#trade">株を見る</a>
+</div></div>
+<div id="title" class="layer" style="display:flex"><div class="panel">
+  <p class="kicker">24Hユウキ↑ゲームズ</p>
+  <h1 class="ttl">マカロン<br>ゲーム</h1>
+  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！</p>
+  <p class="note" id="titleItems"></p>
+  <button class="btn" id="startBtn">スタート</button>
+  <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
+</div></div>
+<div id="shop" class="layer"><div class="panel">
+  <h2>アイテム交換</h2>
+  <p>交換に使える面数 <b id="shopPts" class="num">0</b>面</p>
+  <p class="note">2周目以降まで進んで終わると、クリアした面数が貯まります。アイテムは次に遊ぶときに1つずつ使われます。</p>
+  <ul id="shopList"></ul>
+  <button class="btn" id="shopBack">タイトルへ</button>
 </div></div>
 <script src="../shared/yuki.js?v=dev"></script>
 <script src="../shared/vendor/matter.min.js"></script>
@@ -94,15 +124,20 @@ const HALF_H = 0.6;           // マカロンの厚みの半分(半径に対す�
 // (2026-11-08本人「1ピクセルでも重なれば接触、合体進化としていい」)
 const MERGE_SLACK = 0.3, MERGE_PAD = 4;
 // 時間とノルマ(2026-11-08本人「制限時間制、スコアノルマ制を入れて欲しい」)
-// 1ステージ60秒。そのステージの中で稼いだ点がノルマに届いたら次のステージへ。届かずに時間が切れたら終わり
+// 1ステージ60秒。時間いっぱいまで遊び、時間が来た時点でそのステージで稼いだ点がノルマを超えていれば次の周へ、超えていなければゲームオーバー
+// (2026-11-08本人「制限時間まで遊べてノルマを超えていないとゲームオーバー」)
 const STAGE_SEC = 60;
-// 数値は、でたらめに落とし続ける自動の試し打ちが4〜5ステージで止まる強さに合わせた(1.35倍ではステージ11まで進んだ)
+// 数値は、でたらめに落とし続ける自動の試し打ちが4〜5ステージで止まる強さに合わせた(1.35倍ではステージ11まで進んだ)。人が遊んでの強さは仮説
 const quotaOf = n => Math.round(60 * Math.pow(1.6, n - 1));    // 60, 96, 154, 246, 393 …
-const rnd = () => Math.floor(Math.random() * 4);
+const DROP_LVS = 4;                                             // 上から落ちてくるのは 0〜3 の4種
+const rnd = () => Math.floor(Math.random() * DROP_LVS);
+// マカロンラッシュ: そのステージの点がノルマの半分を超えたら1回、落ちてくる種類の中でいちばん価値の高いマカロンを8個降らせる(2026-11-08本人)
+const RUSH_N = 8;
 
 // ---- 物理(平面のまま。見た目だけ立体にする) ----
 const {Engine, Bodies, Body, Composite, Events} = Matter;
-const engine = Engine.create(); engine.gravity.y = 1.2;
+// 落下の速さは1.5倍(2026-11-08本人「落下速度1.5倍で」。重力 1.2 → 1.8)
+const engine = Engine.create(); engine.gravity.y = 1.8;
 const world = engine.world;
 const wall = {isStatic:true, label:'wall'};
 Composite.add(world, [
@@ -322,31 +357,46 @@ function makeDeco(k){
 let score = 0, gameOver = false, canDrop = true, current = null, nextLv = rnd(), overSteps = 0, px = W/2;
 let combo = 0, comboTimer = 0;
 // 時計は最初の1個を落としたときから動く。こま数(60こまで1秒)で数えるので、タブを隠している間は止まる
-let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false;
+let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDone = false;
+// アイテムの効き目(タイトルで遊び始めるときに、持っているものを1つずつ使う)
+let extraSec = 0, quotaRate = 1;
+const quotaNow = () => Math.round(quotaOf(stage) * quotaRate);
+const stageSteps = () => (STAGE_SEC + extraSec)*60;
 function showNext(){ $('next').style.background = MAC[nextLv].c; $('next').title = MAC[nextLv].name }
 function showStage(){
-  const got = score - stageBase, q = quotaOf(stage), sec = Math.ceil(stepsLeft/60);
+  const got = score - stageBase, q = quotaNow(), sec = Math.ceil(stepsLeft/60);
   $('stageLbl').textContent = `ステージ${stage}`;
-  $('quota').textContent = `${Math.min(got, q)}/${q}`;
-  $('quota').classList.toggle('done', got >= q);
+  $('quota').textContent = `${got}/${q}`;
+  $('quota').classList.toggle('done', got > q);
   if($('time').textContent !== String(sec)) $('time').textContent = sec;
   $('time').classList.toggle('hurry', started && sec <= 10);
 }
 function stageStep(){
   if(!started) return;
-  if(score - stageBase >= quotaOf(stage)){
-    // ノルマ達成: 残りの秒数をおまけの点にして、次のステージへ
-    const bonus = Math.ceil(stepsLeft/60);
-    score += bonus; $('score').textContent = score;
-    pop3d(`ステージ${stage}クリア！`, `のこり時間 +${bonus}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 40, '#ffd23f');
-    stage++; stageBase = score; stepsLeft = STAGE_SEC*60;
+  const got = score - stageBase, q = quotaNow();
+  if(!rushDone && got > q/2){ rushDone = true; rush() }
+  if(--stepsLeft > 0){ showStage(); return }
+  // 時間が来た: ノルマを超えていれば次の周へ、超えていなければゲームオーバー
+  if(got > q){
+    pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 40, '#ffd23f');
+    stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
-  }else if(--stepsLeft <= 0){
+    showStage();
+  }else{
     stepsLeft = 0; showStage();
     endGame('time');
-    return;
   }
-  showStage();
+}
+function rush(){
+  const lv = DROP_LVS - 1, r = MAC[lv].r;
+  pop3d('マカロンラッシュ！', `${MAC[lv].name} ×${RUSH_N}`, new THREE.Vector3(0, H*.62, DEPTH/2 + 20), 42, MAC[lv].c);
+  shake = 5;
+  for(let i = 0; i < RUSH_N; i++) setTimeout(() => {
+    if(gameOver) return;
+    const x = r + 4 + ((i*0.618 + 0.1) % 1)*(W - 2*r - 8);     // 横に散らして順に降らせる
+    const b = makeBody(x, -r - 10, lv); Composite.add(world, b);
+    Body.setVelocity(b, {x:0, y:4}); addMacaron(b).userData.pop = .001;
+  }, i*160);
 }
 function spawn(){
   current = makeBody(px, DROP_Y, nextLv, true);
@@ -446,8 +496,14 @@ function physicsStep(){
 async function endGame(why){
   gameOver = true;
   $('overTitle').textContent = why === 'time' ? 'タイムアップ' : 'ゲームオーバー';
-  $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaOf(stage)}点に届きませんでした。` : 'マカロンが線の上まであふれました。')
+  $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。` : 'マカロンが線の上まであふれました。')
     + (stage > 1 ? `ステージ${stage - 1}までクリア。` : '');
+  // 2周目以降で終わったら、クリアした面数を交換の点にして、アイテム交換の画面へ行けるようにする(2026-11-08本人)
+  if(stage > 1){
+    const s = loadBag(); s.pts += stage - 1; s.unlocked = true; saveBag(s);
+    $('overShop').textContent = `アイテムと交換する(+${stage - 1}面)`;
+    $('overShop').style.display = 'inline-flex';
+  }
   $('final').textContent = score;
   $('got').textContent = '…';
   $('over').style.display = 'flex';
@@ -466,6 +522,63 @@ async function endGame(why){
     if(Yuki.loginReady) $('overLogin').style.display = 'inline-flex';
   }
 }
+
+// ---- アイテムとタイトル(2026-11-08本人「2周回め以降のゲームオーバーでクリアした面数でアイテムと交換できる画面に行ける。
+//      この条件を1回でもクリアしたらタイトルにアイテムGETのボタンが出てくる」) ----
+// 持ち物はこの端末の中(localStorage)に置く。サーバーで持つかは、ジュエル・アクセサリーと一緒に決める
+const BAG_KEY = 'yuki-macaron-bag-v1';
+const ITEMS = [
+  {id:'hourglass', ic:'⏳', name:'砂時計',   cost:2, desc:'各ステージの時間が10秒のびる'},
+  {id:'whisk',     ic:'🥄', name:'泡立て器', cost:3, desc:'すべてのノルマが2割引きになる'},
+  {id:'tongs',     ic:'✨', name:'金のトング', cost:5, desc:'始まってすぐマカロンラッシュが1回来る'},
+];
+function loadBag(){
+  let s; try{ s = JSON.parse(localStorage.getItem(BAG_KEY)) }catch(e){}
+  s = s && typeof s === 'object' ? s : {};
+  return {pts: Math.max(0, s.pts|0), unlocked: !!s.unlocked, items: Object.assign({hourglass:0, whisk:0, tongs:0}, s.items)};
+}
+function saveBag(s){ localStorage.setItem(BAG_KEY, JSON.stringify(s)) }
+function ownedText(s){
+  const have = ITEMS.filter(it => s.items[it.id] > 0).map(it => `${it.ic}${it.name}×${s.items[it.id]}`);
+  return have.length ? `持っているアイテム: ${have.join('　')}(次に遊ぶときに1つずつ使います)` : '';
+}
+function showTitle(){
+  const s = loadBag();
+  $('titleShop').style.display = s.unlocked ? 'inline-flex' : 'none';
+  $('titleItems').textContent = ownedText(s);
+  $('shop').style.display = 'none'; $('title').style.display = 'flex';
+}
+function showShop(){
+  const s = loadBag();
+  $('shopPts').textContent = s.pts;
+  $('shopList').innerHTML = '';
+  for(const it of ITEMS){
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="ic">${it.ic}</span><span class="tx"><b>${it.name}(${it.cost}面)</b>${it.desc}<br>持っている数 ${s.items[it.id]}</span>`;
+    const bt = document.createElement('button'); bt.className = 'btn'; bt.textContent = '交換';
+    bt.disabled = s.pts < it.cost;
+    bt.onclick = () => { const t = loadBag(); if(t.pts < it.cost) return; t.pts -= it.cost; t.items[it.id]++; saveBag(t); showShop() };
+    li.append(bt); $('shopList').append(li);
+  }
+  $('over').style.display = 'none'; $('title').style.display = 'none'; $('shop').style.display = 'flex';
+}
+function startGame(){
+  // 持っているアイテムを1つずつ使う
+  const s = loadBag(), used = [];
+  if(s.items.hourglass > 0){ s.items.hourglass--; extraSec = 10; used.push('⏳砂時計') }
+  if(s.items.whisk > 0){ s.items.whisk--; quotaRate = 0.8; used.push('🥄泡立て器') }
+  const tongs = s.items.tongs > 0; if(tongs){ s.items.tongs--; used.push('✨金のトング') }
+  saveBag(s);
+  stepsLeft = stageSteps(); showStage();
+  $('title').style.display = 'none';
+  spawn();
+  if(used.length) pop3d('アイテムを使いました', used.join(' '), new THREE.Vector3(0, H*.5, DEPTH/2 + 20), 26, '#ffd23f');
+  if(tongs) setTimeout(rush, 900);
+}
+$('startBtn').onclick = startGame;
+$('titleShop').onclick = showShop;
+$('overShop').onclick = showShop;
+$('shopBack').onclick = () => gameOver ? location.reload() : showTitle();
 
 // ---- 毎こま ----
 // 0→1 で、少し行き過ぎてから戻る(ぽんっと出る)
@@ -515,9 +628,9 @@ function frame(now){
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-spawn();
 requestAnimationFrame(frame);
 showStage();
+showTitle();
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver }};
 </script>
