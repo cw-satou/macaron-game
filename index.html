@@ -505,14 +505,15 @@ function stageStep(){
 function shakeCase(){
   if(gameOver || paused || $('title').style.display !== 'none') return;
   $('shakeBtn').disabled = true; setTimeout(() => $('shakeBtn').disabled = false, 1500);
-  shake = 10; Sound.play('shake');
-  [1, -1, 1, -1].forEach((dir, i) => setTimeout(() => {
-    for(const b of Composite.allBodies(world)){
-      if(b.label !== 'mac' || b.isStatic) continue;
-      Body.setVelocity(b, {x: b.velocity.x + dir*4.5, y: b.velocity.y - 1.8});
-      const m = meshes.get(b.id); if(m) m.userData.sv += .8;
-    }
-  }, i*130));
+  shake = 12; Sound.play('shake');
+  // 1回の大きな突き上げ: 上へ高く飛ばし、横はマカロンごとにばらばらの向きと強さ、くるっと回して、あとは自由落下
+  // (2026-11-08本人「揺らすともっと上方向にマカロンが飛んでランダムで左右に移動して自由落下」)
+  for(const b of Composite.allBodies(world)){
+    if(b.label !== 'mac' || b.isStatic) continue;
+    Body.setVelocity(b, {x: (Math.random()*2 - 1)*6, y: -(11 + Math.random()*5)});
+    Body.setAngularVelocity(b, (Math.random()*2 - 1)*.12);
+    const m = meshes.get(b.id); if(m) m.userData.sv += 1.4;
+  }
 }
 $('shakeBtn').onclick = shakeCase;
 const showMute = () => { $('muteBtn').textContent = Sound.muted ? '🔇' : '🔊'; $('muteBtn').setAttribute('aria-label', Sound.muted ? '音を出す' : '音を消す') };
