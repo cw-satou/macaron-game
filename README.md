@@ -8,7 +8,7 @@
 - 上の点線を越えたままになるとゲームオーバー
 
 ## 公開URL
-https://cw-satou.github.io/macaron-game/
+https://spicastar.info/yu-ki-games/macaron-game/
 
 ## 技術
 HTML / CSS / JavaScript + Matter.js
