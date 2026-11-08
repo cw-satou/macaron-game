@@ -24,7 +24,11 @@
   @media (max-width:560px){ #hud{gap:12px} #hud .lbl{margin-right:.15em} #score,#quota,#time{font-size:var(--fs-m)} #hud .lbl-next{display:none} }
   #score.bump{animation:bump .3s ease}
   @keyframes bump{40%{transform:scale(1.35);color:var(--pink)}}
-  #next{display:inline-block;width:26px;height:26px;vertical-align:middle;border-radius:50%;border:var(--line) solid var(--ink)}
+  /* 雲の下の2つの候補。押したほうを雲が抱える。太い縁と少し大きいほうが、いま抱えているほう */
+  .hand{display:inline-flex;align-items:center;gap:6px}
+  .slot{width:34px;height:34px;padding:0;border-radius:50%;border:2px solid var(--ink-soft);cursor:pointer;transform:scale(.85);transition:transform .15s}
+  .slot.on{border:4px solid var(--ink);transform:scale(1.05);box-shadow:0 0 0 3px var(--pink)}
+  @media (max-width:420px){ .hand{gap:4px} .slot{width:30px;height:30px} }
   #stage{position:relative;margin:0 auto}
   #c{display:block;touch-action:none}
   #fx{position:absolute;inset:0;pointer-events:none;overflow:hidden}
@@ -89,7 +93,7 @@
   <span><span class="lbl">スコア</span><b id="score" class="num">0</b></span>
   <span><span class="lbl" id="stageLbl">ステージ1</span><b id="quota" class="num">0/40</b></span>
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span>
-  <span><span class="lbl lbl-next">ネクスト</span><span id="next"></span></span>
+  <span class="hand"><span class="lbl lbl-next">えらぶ</span><button type="button" class="slot" id="slot0"></button><button type="button" class="slot" id="slot1"></button></span>
 </div>
 <div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
@@ -180,19 +184,22 @@ const Sound = (() => {
 })();
 
 // ---- ルール(第1段階の仕様) ----
-// 抱える高さ DROP_Y は、2倍のマカロンと雲が画面の上で切れないよう 55 → 85 に下げた
-const W = 420, H = 620, LINE = 110, DROP_Y = 85;
+const W = 420, H = 620, LINE = 110;
+// 雲は箱の上の縁より上に浮かせる(2026-11-08本人「雲はもう少し上にいて」)。マカロンは雲の真下にぶら下げるので、抱える高さは大きさで変わる
+const CLOUD_Y = H + 34;                                   // 雲の中心の高さ(立体の座標)
+const dropY = lv => 9 + MAC[lv].r*HALF_H;                 // 抱えるマカロンの中心(物理の座標。上の面が雲の下の縁に付く)
 const MAC = [
-  // 大きさは最初の1.5倍。2倍にしたらラッシュの連鎖で数十秒であふれたので、本人の選択で1.5倍にした(2026-11-08)
-  {name:'ミント',     r:27,  c:'#9fe3c8', s:'#5fbf9c'},
-  {name:'レモン',     r:36,  c:'#fff09a', s:'#e6c84a'},
+  // 段階ごとの大きさの差を小さくした(2026-11-08本人「大きくなる度合いが大きい気がする。もっと大きさの差は少なくていい」)
+  // ミント→いちごで約3.2倍(前は約5.3倍)。小さいほうは前より大きく、大きいほうは前より小さい
+  {name:'ミント',     r:34,  c:'#9fe3c8', s:'#5fbf9c'},
+  {name:'レモン',     r:40,  c:'#fff09a', s:'#e6c84a'},
   {name:'ピスタチオ', r:47,  c:'#c6e39b', s:'#8fbf5a'},
-  {name:'ラベンダー', r:59,  c:'#d5c3ee', s:'#a58bd6'},
-  {name:'オレンジ',   r:72,  c:'#ffc48a', s:'#f08f3a'},
-  {name:'チョコ',     r:87,  c:'#b98564', s:'#7d5236'},
-  {name:'キャラメル', r:104, c:'#e3b36e', s:'#b9803a'},
-  {name:'バニラ',     r:122, c:'#fff4dc', s:'#dcc08e'},
-  {name:'いちご',     r:143, c:'#ff9bb8', s:'#e4587f'},
+  {name:'ラベンダー', r:55,  c:'#d5c3ee', s:'#a58bd6'},
+  {name:'オレンジ',   r:64,  c:'#ffc48a', s:'#f08f3a'},
+  {name:'チョコ',     r:74,  c:'#b98564', s:'#7d5236'},
+  {name:'キャラメル', r:85,  c:'#e3b36e', s:'#b9803a'},
+  {name:'バニラ',     r:97,  c:'#fff4dc', s:'#dcc08e'},
+  {name:'いちご',     r:110, c:'#ff9bb8', s:'#e4587f'},
 ];
 const SCORE = [1,3,6,10,15,21,28,36,45];
 const HALF_H = 0.6;           // マカロンの厚みの半分(半径に対する比)
@@ -238,7 +245,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 10, 6000);
-const TARGET = new THREE.Vector3(0, H*0.40, 0);
+const TARGET = new THREE.Vector3(0, H*0.47, 0);   // 雲を箱の上へ出したので、見る中心を少し上げた(0.40 → 0.47)
 const ELEV = THREE.MathUtils.degToRad(16), AZIM = THREE.MathUtils.degToRad(-11);  // 少し上から、少し右から
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xffd6e4, 1.6));
@@ -356,7 +363,7 @@ cloud.add(cloudBody);
 }
 cloud.position.set(0, H - 2, 0);
 cloud.scale.setScalar(1.5);   // マカロンを2倍にしたので、抱えて見える大きさに合わせる
-cloud.userData = {kick:0, t:0, y:H - DROP_Y + 64};
+cloud.userData = {kick:0, t:0};
 scene.add(cloud);
 function cloudDrop(){ cloud.userData.kick = 1 }
 
@@ -366,7 +373,7 @@ function fit(){
   renderer.setSize(w, h); $('stage').style.width = w + 'px'; $('stage').style.height = h + 'px';
   camera.aspect = w / h;
   const t = Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
-  const dist = Math.max((H*1.36)/2/t, (PLATE_R*2*1.04)/2/t/camera.aspect);
+  const dist = Math.max((H*1.44)/2/t, (PLATE_R*2*1.04)/2/t/camera.aspect);
   camera.position.set(TARGET.x + dist*Math.cos(ELEV)*Math.sin(AZIM), TARGET.y + dist*Math.sin(ELEV), TARGET.z + dist*Math.cos(ELEV)*Math.cos(AZIM));
   camera.lookAt(TARGET); camera.updateProjectionMatrix();
 }
@@ -466,7 +473,9 @@ function makeDeco(k){
 }
 
 // ---- 遊び ----
-let score = 0, gameOver = false, canDrop = true, current = null, nextLv = rnd(), overSteps = 0, px = W/2;
+let score = 0, gameOver = false, canDrop = true, current = null, overSteps = 0, px = W/2;
+// 雲の下には2種類。押したほうを落とす(2026-11-08本人「雲の下に置かれるマカロンは2種類置かれるとプレイヤーは落とすマカロンを選べる」)
+let hand = [rnd(), rnd()], sel = 0, spare = null;
 let combo = 0, comboTimer = 0;
 // 時計は最初の1個を落としたときから動く。こま数(60こまで1秒)で数えるので、タブを隠している間は止まる
 let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDone = false;
@@ -474,7 +483,14 @@ let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDon
 let extraSec = 0, quotaRate = 1;
 const quotaNow = () => Math.round(quotaOf(stage) * quotaRate);
 const stageSteps = () => (STAGE_SEC + extraSec)*60;
-function showNext(){ $('next').style.background = MAC[nextLv].c; $('next').title = MAC[nextLv].name }
+// 上の表示の2つの丸: 色=種類、太い縁=いま雲が抱えているほう
+function showNext(){
+  hand.forEach((lv, i) => {
+    const b = $('slot' + i);
+    b.style.background = MAC[lv].c; b.title = MAC[lv].name; b.setAttribute('aria-label', `${MAC[lv].name}を選ぶ`);
+    b.classList.toggle('on', i === sel);
+  });
+}
 function showStage(){
   const got = score - stageBase, q = quotaNow(), sec = Math.ceil(stepsLeft/60);
   $('stageLbl').textContent = `ステージ${stage}`;
@@ -519,6 +535,8 @@ function shakeCase(){
   }, i*130));
 }
 $('shakeBtn').onclick = shakeCase;
+$('slot0').onclick = () => choose(0);
+$('slot1').onclick = () => choose(1);
 const showMute = () => { $('muteBtn').textContent = Sound.muted ? '🔇' : '🔊'; $('muteBtn').setAttribute('aria-label', Sound.muted ? '音を出す' : '音を消す') };
 $('muteBtn').onclick = () => { Sound.start(); Sound.toggle(); showMute() };
 showMute();
@@ -579,19 +597,34 @@ function rush(){
     Body.setVelocity(b, {x:0, y:4}); addMacaron(b).userData.pop = .001;
   }, i*380);
 }
+// 雲の真下に選んだほう(物理の体つき)、横にもう1つ(見た目だけ)を出す
 function spawn(){
-  current = makeBody(px, DROP_Y, nextLv, true);
-  nextLv = rnd(); Composite.add(world, current); addMacaron(current).userData.pop = .001; showNext();
+  if(current){ Composite.remove(world, current); removeMacaron(current) }
+  current = makeBody(clampFor(hand[sel], px), dropY(hand[sel]), hand[sel], true);
+  px = current.position.x;
+  Composite.add(world, current); addMacaron(current).userData.pop = .001;
+  setSpare(); showNext();
 }
-function clampX(x){ const r = MAC[current.lv].r + 4; return Math.max(r, Math.min(W - r, x)) }
-function moveTo(x){ if(!current || gameOver) return; px = clampX(x); Body.setPosition(current, {x:px, y:DROP_Y}) }
+function setSpare(){
+  if(spare) scene.remove(spare);
+  const lv = hand[1 - sel];
+  spare = makeMacaronMesh(lv); spare.userData.lv = lv; spare.scale.setScalar(.7); scene.add(spare);
+}
+// 上の丸を押すと、雲が抱えるほうを入れかえる
+function choose(i){
+  if(i === sel || !current || !canDrop || gameOver || paused) return;
+  sel = i; spawn(); Sound.play('click');
+}
+const clampFor = (lv, x) => { const r = MAC[lv].r + 4; return Math.max(r, Math.min(W - r, x)) };
+function moveTo(x){ if(!current || gameOver) return; px = clampFor(current.lv, x); Body.setPosition(current, {x:px, y:dropY(current.lv)}) }
 function drop(){
   if(!current || !canDrop || gameOver || paused) return;
   const lv = current.lv;
   Body.setStatic(current, false); current = null; canDrop = false; started = true;
+  hand[sel] = rnd();   // 落としたほうの枠に、新しい種類が入る(選んでいた枠のまま)
   cloudDrop();
   Sound.play('drop', .92 + Math.random()*.16);
-  pop3d(MAC[lv].name, null, toWorld(px, DROP_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
+  pop3d(MAC[lv].name, null, toWorld(px, dropY(lv) - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
   // 連打は止めない。代わりに、抱えているマカロンと同じ種類を箱の中で光らせて、狙って落とすほうが得だと分かるようにする
   // (2026-11-08本人「連打できないようにするんじゃなくて、したら良くないとわかるように。ツモったマカロンと同じマカロンを光らせる」)
   setTimeout(() => { if(gameOver) return; canDrop = true; if(!paused) spawn() }, 650);
@@ -603,10 +636,18 @@ function pointerX(e){
   ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left)/rect.width*2 - 1, -(e.clientY - rect.top)/rect.height*2 + 1), camera);
   return ray.ray.intersectPlane(plane0, hit) ? hit.x + W/2 : px;
 }
+// 押して雲を掴み、押したまま動かし、好きな場所で離すと落とす(2026-11-08本人「タップで掴んで押したまま好きな場所で離すと落とす」)
+// 掴んでいない間は雲は動かない。指が画面の外へ出て取り消されたときは落とさない
 const cv = renderer.domElement;
-cv.addEventListener('pointermove', e => moveTo(pointerX(e)));
-cv.addEventListener('pointerdown', e => { moveTo(pointerX(e)); if(e.pointerType === 'mouse') drop() });
-cv.addEventListener('pointerup', e => { if(e.pointerType !== 'mouse'){ moveTo(pointerX(e)); drop() } });
+let grabbing = false;
+cv.addEventListener('pointerdown', e => {
+  if(!current || gameOver || paused) return;
+  grabbing = true; cv.setPointerCapture(e.pointerId);
+  moveTo(pointerX(e));
+});
+cv.addEventListener('pointermove', e => { if(grabbing) moveTo(pointerX(e)) });
+cv.addEventListener('pointerup', e => { if(!grabbing) return; grabbing = false; moveTo(pointerX(e)); drop() });
+cv.addEventListener('pointercancel', () => { grabbing = false });
 
 // ぶつかったら、ぷるんと揺らす
 Events.on(engine, 'collisionStart', ev => {
@@ -831,10 +872,12 @@ function frame(now){
     const k = Math.sin(u.kick*Math.PI)*.22;
     cloudBody.scale.set(1 + k, 1 - k, 1 + k);
     cloudBody.rotation.z = u.lean;
-    // 抱えているマカロンの上の面のすぐ上に浮く(大きいほど高く)
-    const holdTop = current ? MAC[current.lv].r*HALF_H : 24;
-    u.y += ((H - DROP_Y + holdTop + 40) - u.y)*Math.min(1, dt*10);
-    cloud.position.y = u.y + (reduce ? 0 : Math.sin(u.t*2.2)*3) + k*14;
+    cloud.position.y = CLOUD_Y + (reduce ? 0 : Math.sin(u.t*2.2)*3) + k*14;
+    // もう1つの候補は、雲の横に小さくぶら下げる(箱の外へはみ出さない側に置く)
+    if(spare){
+      const side = tx > 0 ? -1 : 1, r = MAC[spare.userData.lv].r*.7;
+      spare.position.set(tx + side*(62 + r), CLOUD_Y - 22 - r*HALF_H + (reduce ? 0 : Math.sin(u.t*2.2 + 1)*3), 0);
+    }
   }
   for(let i = bits.length - 1; i >= 0; i--){
     const p = bits[i], u = p.userData;
