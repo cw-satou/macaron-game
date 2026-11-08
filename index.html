@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>マカロンゲーム</title>
+<style>
+  html,body{margin:0;height:100%;background:#fff3f6;font-family:system-ui,sans-serif;touch-action:none;overflow:hidden}
+  #wrap{display:flex;flex-direction:column;align-items:center;height:100%}
+  #hud{display:flex;gap:24px;padding:8px;font-size:18px;color:#8a4b5e;align-items:center}
+  #next{display:inline-block;vertical-align:middle;border-radius:50%;border:2px solid #d9a0b3}
+  canvas{background:#fffafc;border:4px solid #e7b8c6;border-top:none;border-radius:0 0 16px 16px;display:block}
+  #over{position:fixed;inset:0;background:rgba(255,240,245,.9);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#8a4b5e;font-size:24px}
+  button{font-size:18px;padding:10px 24px;border:none;border-radius:999px;background:#f28cb1;color:#fff}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">スコア: <b id="score">0</b> <span>ネクスト: <span id="next"></span></span></div>
+  <canvas id="c"></canvas>
+</div>
+<div id="over"><div>ゲームオーバー</div><div>スコア: <b id="final">0</b></div><button onclick="location.reload()">もう一回</button></div>
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<script>
+const {Engine,Render,Runner,Bodies,Body,Composite,Events,World}=Matter;
+const W=Math.min(420,window.innerWidth-16), H=Math.min(620,window.innerHeight-70);
+const LINE=110;
+const MAC=[
+ {name:'ミント',   r:18,c:'#9fe3c8',s:'#5fbf9c'},
+ {name:'レモン',   r:24,c:'#fff09a',s:'#e6c84a'},
+ {name:'ピスタチオ',r:31,c:'#c6e39b',s:'#8fbf5a'},
+ {name:'ラベンダー',r:39,c:'#d5c3ee',s:'#a58bd6'},
+ {name:'オレンジ', r:48,c:'#ffc48a',s:'#f08f3a'},
+ {name:'チョコ',   r:58,c:'#b98564',s:'#7d5236'},
+ {name:'キャラメル',r:69,c:'#e3b36e',s:'#b9803a'},
+ {name:'バニラ',   r:81,c:'#fff4dc',s:'#dcc08e'},
+ {name:'いちご',   r:95,c:'#ff9bb8',s:'#e4587f'}
+];
+const SCORE=[1,3,6,10,15,21,28,36,45];
+let score=0, gameOver=false, canDrop=true, current=null, nextLv=rnd(), overTimer=0;
+function rnd(){return Math.floor(Math.random()*4);}
+
+const engine=Engine.create(); engine.gravity.y=1.2;
+const canvas=document.getElementById('c');
+const render=Render.create({canvas,engine,options:{width:W,height:H,wireframes:false,background:'transparent'}});
+const wallOpt={isStatic:true,render:{visible:false}};
+World.add(engine.world,[
+  Bodies.rectangle(W/2,H+20,W,40,wallOpt),
+  Bodies.rectangle(-20,H/2,40,H*2,wallOpt),
+  Bodies.rectangle(W+20,H/2,40,H*2,wallOpt)
+]);
+Render.run(render); Runner.run(Runner.create(),engine);
+
+function makeMacaron(x,y,lv,st=false){
+  const m=MAC[lv];
+  const b=Bodies.circle(x,y,m.r,{isStatic:st,restitution:.15,friction:.4,density:.002,label:'mac',render:{visible:false}});
+  b.lv=lv; return b;
+}
+function spawn(){
+  current=makeMacaron(W/2,55,nextLv,true);
+  nextLv=rnd();
+  World.add(engine.world,current);
+  showNext();
+}
+function showNext(){const n=document.getElementById('next');const m=MAC[nextLv];n.style.width=n.style.height='22px';n.style.background=m.c;n.title=m.name;}
+
+let px=W/2;
+function moveTo(x){ if(!current||gameOver)return; const r=MAC[current.lv].r+4; px=Math.max(r,Math.min(W-r,x)); Body.setPosition(current,{x:px,y:55}); }
+function drop(){ if(!current||!canDrop||gameOver)return; Body.setStatic(current,false); current=null; canDrop=false; setTimeout(()=>{canDrop=true; spawn();},650); }
+function getX(e){const rect=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return t.clientX-rect.left;}
+canvas.addEventListener('mousemove',e=>moveTo(getX(e)));
+canvas.addEventListener('mousedown',e=>{moveTo(getX(e));drop();});
+canvas.addEventListener('touchstart',e=>{moveTo(getX(e));e.preventDefault();},{passive:false});
+canvas.addEventListener('touchmove',e=>{moveTo(getX(e));e.preventDefault();},{passive:false});
+canvas.addEventListener('touchend',e=>{drop();e.preventDefault();},{passive:false});
+
+Events.on(engine,'collisionStart',ev=>{
+  for(const p of ev.pairs){
+    const a=p.bodyA,b=p.bodyB;
+    if(a.label!=='mac'||b.label!=='mac'||a.lv!==b.lv||a.merged||b.merged||a.isStatic||b.isStatic)continue;
+    a.merged=b.merged=true;
+    const x=(a.position.x+b.position.x)/2, y=(a.position.y+b.position.y)/2;
+    World.remove(engine.world,[a,b]);
+    if(a.lv===MAC.length-1){ score+=SCORE[a.lv]*4; burst(x,y,MAC[a.lv].c,28); }
+    else { const n=makeMacaron(x,y,a.lv+1); World.add(engine.world,n); Body.setVelocity(n,{x:0,y:-2}); score+=SCORE[a.lv]; burst(x,y,MAC[a.lv+1].c,10); }
+    document.getElementById('score').textContent=score;
+  }
+});
+
+const parts=[];
+function burst(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*8,vy:(Math.random()-.5)*8-2,l:30,c});}
+function drawMacaron(ctx,x,y,r,m,ang){
+  ctx.save();ctx.translate(x,y);ctx.rotate(ang);
+  ctx.fillStyle=m.s;ctx.beginPath();ctx.ellipse(0,0,r,r*.55,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=m.c;ctx.beginPath();ctx.ellipse(0,-r*.22,r,r*.5,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(0,r*.3,r*.95,r*.42,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.45)';ctx.beginPath();ctx.ellipse(-r*.3,-r*.45,r*.3,r*.12,-.3,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+Events.on(render,'afterRender',()=>{
+  const ctx=render.context;
+  ctx.strokeStyle='rgba(230,80,120,.6)';ctx.setLineDash([8,6]);ctx.beginPath();ctx.moveTo(0,LINE);ctx.lineTo(W,LINE);ctx.stroke();ctx.setLineDash([]);
+  let over=false;
+  for(const b of Composite.allBodies(engine.world)){
+    if(b.label!=='mac')continue;
+    drawMacaron(ctx,b.position.x,b.position.y,MAC[b.lv].r,MAC[b.lv],b.angle);
+    if(!b.isStatic&&b.position.y-MAC[b.lv].r<LINE&&Math.abs(b.velocity.y)<.2)over=true;
+  }
+  for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.l--;ctx.globalAlpha=p.l/30;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();if(p.l<=0)parts.splice(i,1);}
+  ctx.globalAlpha=1;
+  overTimer=over?overTimer+1:0;
+  if(overTimer>90&&!gameOver){gameOver=true;document.getElementById('final').textContent=score;document.getElementById('over').style.display='flex';}
+});
+spawn();
+</script>
+</body>
+</html>
