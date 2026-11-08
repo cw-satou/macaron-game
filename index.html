@@ -711,10 +711,11 @@ function merge(a, b){
   if(combo === FEVER_COMBO) startFever();
   const mul = feverSteps > 0 ? 2 : 1;
   // すぐ横のこげマカロンは、くっついた勢いで一緒に消える
-  const near = MAC[Math.min(lv + 1, MAC.length - 1)].r + 16;
+  // 2個の真ん中からではなく、くっつく2個のそれぞれから測る(真ん中からだと、片方の真横に付いたこげが届かなかった)
   for(const c of Composite.allBodies(world)){
     if(c.kind !== 'burnt' || c.merged) continue;
-    if(Math.hypot(c.position.x - x, c.position.y - y) < near + MAC[c.lv].r) clearOne(c, 3*mul, 'こげ消し！');
+    const touch = [a, b].some(p => Math.hypot(c.position.x - p.position.x, c.position.y - p.position.y) < MAC[lv].r + MAC[c.lv].r + 16);
+    if(touch) clearOne(c, 3*mul, 'こげ消し！');
   }
   // くっつく音: 大きく育つほど・コンボが続くほど高くする
   if(lv >= 4) Sound.play('grow', .9 + (lv - 4)*.06);
@@ -1015,7 +1016,6 @@ showTitle();
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
   get shelf(){ return shelf.map(s => s && {x:Math.round(s.x), lv:s.lv, ready:s.ready}) }, get held(){ return held },
-  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) }};
-</script>
+  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) }};</script>
 </body>
 </html>
