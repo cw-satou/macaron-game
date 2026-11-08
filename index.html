@@ -121,6 +121,15 @@
   #tree .node.lock{opacity:.45}
   #tree .node.can circle{fill:var(--sun)}
   #tree .node.pick circle{stroke:var(--pink);stroke-width:5}
+  #tree .node.tech circle{stroke-dasharray:5 3}
+  #tree .node.tech.got circle{fill:#e8dcff;stroke-dasharray:none}
+  #tree .branch{font-size:11px;font-weight:800;text-anchor:middle;fill:var(--ink-soft)}
+  /* 技のボタン: 遊ぶ場所の下の真ん中(音とゆらすの間) */
+  #techs{position:absolute;left:70px;bottom:15px;z-index:5;display:flex;gap:6px}
+  #techs button{width:46px;height:46px;font-size:22px;line-height:1;border:var(--line) solid var(--ink);border-radius:50%;background:#e8dcff;box-shadow:var(--shadow);cursor:pointer;position:relative}
+  #techs button:disabled{opacity:.35}
+  #techs button.on{animation:bump .6s ease infinite;background:var(--sun)}
+  #techs button small{position:absolute;right:-4px;top:-4px;font-size:11px;font-weight:800;background:var(--pink);color:#fff;border-radius:9px;padding:0 5px}
   #tree .ic{font-size:22px;text-anchor:middle}
   #tree .lvl{font-size:12px;font-weight:800;text-anchor:middle;fill:var(--ink)}
   #treeInfo{display:flex;flex-direction:column;gap:6px;text-align:left;font-size:var(--fs-s);line-height:1.5;min-height:110px}
@@ -137,7 +146,7 @@
   <span><span class="lbl">スコア</span><b id="score" class="num">0</b><b id="mulTag" class="num"></b></span>
   <span><span class="lbl" id="stageLbl">ステージ1</span><b id="quota" class="num">0/40</b></span>
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span></div>
-<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button><button type="button" id="treeBtn">🌳 スキル</button><div id="kinds" aria-label="マカロンごとのレベル"></div></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button><button type="button" id="treeBtn">🌳 スキル</button><div id="kinds" aria-label="マカロンごとのレベル"></div><div id="techs"></div></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2 id="overTitle">ゲームオーバー</h2>
@@ -591,6 +600,7 @@ function stageStep(){
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
     showStage(); showMul();
+    autoSteps = 0; refillTechs();   // 技はステージごとに使える回数が戻る
     if(Skill.fx.rushStart()) setTimeout(rush, 1600);
     // 3ステージで一区切り。続けるか、ここで終えるかを聞く(2026-11-08本人「ワンサイクル3ステージで一旦タイトルに戻るか続けるかを聞く」)
     if((stage - 1) % CYCLE === 0){ paused = true; setTimeout(askCycle, 1400) }
@@ -628,7 +638,7 @@ let treeFrom = null;   // 'game' か 'cycle'
 function openTree(from){
   treeFrom = from; paused = true;
   if(from === 'cycle') $('cycle').style.display = 'none';
-  Skill.draw($('tree'), $('treeInfo'), n => { Sound.play('grow', 1.2); showMul(); showStage() });
+  Skill.draw($('tree'), $('treeInfo'), n => { Sound.play('grow', 1.2); showMul(); showStage(); showTechs() });
   showMul();
   $('skills').style.display = 'flex';
 }
@@ -636,7 +646,7 @@ function closeTree(){
   $('skills').style.display = 'none';
   if(treeFrom === 'cycle') $('cycle').style.display = 'flex';
   else paused = false;
-  showMul();
+  showMul(); showTechs();
 }
 $('treeBtn').onclick = () => { if(!gameOver && !paused && $('title').style.display === 'none') openTree('game') };
 $('cycleTree').onclick = () => openTree('cycle');
@@ -924,6 +934,89 @@ function gimmickStep(){
   if(started && stage >= BURNT_FROM && --burntTimer <= 0){ spawnBurnt(); burntTimer = burntEvery()*60 }
 }
 
+// ---- 技(スキルツリーで買う。1ステージに1回押して使う。2026-11-09本人) ----
+// じしん=揺れながら同じマカロンが寄り合う / マジカルマカロン=箱のマカロンの真上に同じマカロンが降る / フィーバータイム=すぐフィーバー / 自動パティシエ=同じ種類の上へ自動で落とす
+const techLeft = {};   // 技ごとの、このステージで残っている回数
+let quakeSteps = 0, autoSteps = 0, autoTimer = 0;
+const usesOf = id => id === 'quake' ? Skill.fx.quakeUses() : 1;
+function refillTechs(){ for(const n of Skill.techs()) techLeft[n.id] = usesOf(n.id); showTechs() }
+function showTechs(){
+  const box = $('techs'), list = Skill.techs();
+  box.innerHTML = '';
+  for(const n of list){
+    if(techLeft[n.id] == null) techLeft[n.id] = usesOf(n.id);   // ステージの途中で買ったときも、すぐ1回使える
+    const bt = document.createElement('button');
+    bt.type = 'button'; bt.textContent = n.ic; bt.setAttribute('aria-label', n.name); bt.title = n.name; bt.dataset.id = n.id;
+    bt.disabled = techLeft[n.id] <= 0;
+    bt.classList.toggle('on', (n.id === 'quake' && quakeSteps > 0) || (n.id === 'auto' && autoSteps > 0));
+    if(usesOf(n.id) > 1) bt.insertAdjacentHTML('beforeend', `<small>${techLeft[n.id]}</small>`);
+    bt.onclick = () => useTech(n.id);
+    box.append(bt);
+  }
+}
+// 箱の中で、同じ種類のいちばん上にあるマカロン
+function topOf(lv){
+  let best = null;
+  for(const b of Composite.allBodies(world)) if(b.label === 'mac' && !b.isStatic && !b.kind && !b.merged && b.lv === lv && (!best || b.position.y < best.position.y)) best = b;
+  return best;
+}
+function useTech(id){
+  if(gameOver || paused || !(techLeft[id] > 0) || $('title').style.display !== 'none') return;
+  techLeft[id]--; Sound.play('rush', 1.1); started = true;
+  const at = new THREE.Vector3(0, H*.62, DEPTH/2 + 20);
+  if(id === 'quake'){
+    quakeSteps = Math.round(Skill.fx.quakeSec()*60);
+    pop3d('じしん！', '同じマカロンが寄り合う', at, 42, '#ff7a1a');
+  }else if(id === 'magic'){
+    const list = Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.kind && !b.merged && b.lv < MAC.length - 1)
+      .sort(() => Math.random() - .5).slice(0, Skill.fx.magicN());
+    pop3d('マジカルマカロン！', list.length ? `${list.length}個` : '箱がからっぽ', at, 40, '#a58bd6');
+    list.forEach((t, i) => setTimeout(() => {
+      if(gameOver || t.merged) return;
+      const r = MAC[t.lv].r, y = Math.max(-r, t.position.y - r*HALF_H*2 - 30);
+      const b = makeBody(t.position.x, y, t.lv); Composite.add(world, b);
+      Body.setVelocity(b, {x:0, y:5}); addMacaron(b).userData.pop = .001;
+      burst(toWorld(t.position.x, y), '#d5c3ee', 12, 1);
+    }, i*260));
+  }else if(id === 'feverNow'){
+    startFever();
+  }else if(id === 'auto'){
+    const sec = Skill.fx.autoSec();
+    autoSteps = sec === Infinity ? stepsLeft : Math.round(sec*60); autoTimer = 0;
+    pop3d('自動パティシエ！', sec === Infinity ? 'このステージの終わりまで' : `${sec}秒`, at, 40, '#5fbf9c');
+  }
+  showTechs();
+}
+function techStep(){
+  // じしん: 箱をゆらし、同じ種類どうしを引き寄せる(くっつく判定はふだんの mergeStep に任せる)
+  if(quakeSteps > 0){
+    if(--quakeSteps === 0) showTechs();
+    shake = Math.max(shake, 5);
+    const list = Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.kind && !b.merged);
+    for(let i = 0; i < list.length; i++) for(let j = i + 1; j < list.length; j++){
+      const a = list[i], b = list[j];
+      if(a.lv !== b.lv) continue;
+      const dx = b.position.x - a.position.x, dy = b.position.y - a.position.y, d = Math.hypot(dx, dy) || 1, k = .003;   // 重力(1.8×0.001)より強く引き寄せ、積み重なった下からも抜け出させる
+      Body.applyForce(a, a.position, {x:dx/d*k*a.mass, y:dy/d*k*a.mass});
+      Body.applyForce(b, b.position, {x:-dx/d*k*b.mass, y:-dy/d*k*b.mass});
+    }
+    if(quakeSteps % 8 === 0) for(const b of list) Body.setVelocity(b, {x:b.velocity.x + (Math.random()*2 - 1)*1.2, y:b.velocity.y - Math.random()*1.5});
+  }
+  // 自動パティシエ: 指を離している間、棚の1個を同じ種類の真上へ運んで落とす
+  if(autoSteps > 0){
+    if(--autoSteps === 0) showTechs();
+    if(--autoTimer <= 0 && held < 0 && !pressing){
+      const i = shelf.findIndex(s => s && s.ready);
+      if(i >= 0){
+        const s = shelf[i], t = s.body.kind ? null : topOf(s.lv);
+        held = i; current = s.body;
+        moveHeld(t ? t.position.x : MAC[s.lv].r + Math.random()*(W - 2*MAC[s.lv].r));
+        drop(); autoTimer = 48;
+      }
+    }
+  }
+}
+
 let shake = 0;
 function physicsStep(){
   Engine.update(engine, 1000/60);
@@ -939,6 +1032,7 @@ function physicsStep(){
   stageStep();
   if(gameOver) return;
   gimmickStep();
+  techStep();
   const want = Math.min(DECO_MAX, Math.floor(score / DECO_STEP));
   if(decos.length < want){
     makeDeco(decos.length);
@@ -947,7 +1041,7 @@ function physicsStep(){
 }
 async function endGame(why){
   gameOver = true;
-  document.body.classList.remove('fever'); feverSteps = 0;
+  document.body.classList.remove('fever'); feverSteps = 0; autoSteps = 0; quakeSteps = 0;
   Sound.play(why === 'cycle' ? 'clear' : 'over'); Sound.bgmDown();
   $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' ? 'おつかれさま！' : 'ゲームオーバー';
   $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
@@ -985,7 +1079,7 @@ function startGame(){
   Sound.start(); Sound.play('click');
   Skill.resetRun(); Skill.run.sugar = Tools.fx.startSugar();
   kindLv.fill(Tools.fx.startLv());
-  stepsLeft = stageSteps(); showStage(); showMul(); showKinds();
+  stepsLeft = stageSteps(); showStage(); showMul(); showKinds(); refillTechs();
   $('title').style.display = 'none';
   initShelf();
   const own = Tools.TOOLS.filter(t => Tools.has(t.id)).map(t => t.ic).join('');
@@ -1093,6 +1187,9 @@ window.__macaron = {get score(){ return score }, get count(){ return meshes.size
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
   get shelf(){ return shelf.map(s => s && {x:Math.round(s.x), lv:s.lv, ready:s.ready}) }, get held(){ return held },
   get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) },
+  get levels(){ return Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.kind).map(b => b.lv).sort() },   // 試験が使う
+  get bodies(){ return Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic).map(b => [b.lv, Math.round(b.position.x), Math.round(b.position.y)]) },
+  get quake(){ return quakeSteps },
   sameX(lv){ let best = null; for(const b of Composite.allBodies(world)) if(b.label === 'mac' && !b.isStatic && !b.kind && b.lv === lv && (!best || b.position.y < best.position.y)) best = b; return best && Math.round(best.position.x) }};   // 自動で遊ぶ試験が使う</script>
 </body>
 </html>
