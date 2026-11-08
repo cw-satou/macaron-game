@@ -197,7 +197,9 @@ const MAC = [
   {name:'バニラ',     r:97,  c:'#fff4dc', s:'#dcc08e'},
   {name:'いちご',     r:110, c:'#ff9bb8', s:'#e4587f'},
 ];
-const SCORE = [1,3,6,10,15,21,28,36,45];
+// くっつけて段階(レベル)が1つ上がるたびに点が2倍になる(2026-11-08本人「くっつける事にそのマカロンのレベルが上がって、スコアも指数的に増えていって欲しい」)
+// ミント2 → レモン4 → … → バニラ256 → いちご512。前は 1,3,6,10… の足し算の伸びだった
+const SCORE = MAC.map((_, lv) => 2 * 2**lv);
 const HALF_H = 0.6;           // マカロンの厚みの半分(半径に対する比)
 // くっつく判定のゆとり(半径に対する比 + 固定の点数)。立体は少し上から見ているので、画面で重なって見えた時点でくっつくよう甘めにする
 // (2026-11-08本人「1ピクセルでも重なれば接触、合体進化としていい」)
@@ -206,8 +208,8 @@ const MERGE_SLACK = 0.3, MERGE_PAD = 4;
 // 1ステージ60秒。時間いっぱいまで遊び、時間が来た時点でそのステージで稼いだ点がノルマを超えていれば次の周へ、超えていなければゲームオーバー
 // (2026-11-08本人「制限時間まで遊べてノルマを超えていないとゲームオーバー」)
 const STAGE_SEC = 60;
-// 数値は、でたらめに落とし続ける自動の試し打ちが4〜5ステージで止まる強さに合わせた(1.35倍ではステージ11まで進んだ)。人が遊んでの強さは仮説
-const quotaOf = n => Math.round(60 * Math.pow(1.6, n - 1));    // 60, 96, 154, 246, 393 …
+// 点が段階ごとに2倍になったので、ノルマも毎ステージ2倍にする(2026-11-08。前は 60×1.6^(n-1))。スキルツリーで倍率を育てないと追いつかない強さが狙い。人が遊んでの強さは仮説
+const quotaOf = n => Math.round(100 * Math.pow(2, n - 1));     // 100, 200, 400, 800, 1600 …
 const DROP_LVS = 4;                                             // 上から落ちてくるのは 0〜3 の4種
 const rnd = () => Math.floor(Math.random() * DROP_LVS);
 // マカロンラッシュ: そのステージの点がノルマの半分を超えたら1回、落ちてくる種類の中でいちばん価値の高いマカロンを8個降らせる(2026-11-08本人)
@@ -732,7 +734,7 @@ function merge(a, b){
     const m = addMacaron(n); m.userData.pop = 0.001;
     const pts = SCORE[lv]*mul; score += pts;
     burst(at, MAC[lv+1].c, 10 + lv*4, 1 + lv*.15);
-    pop3d(`${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : '') + (mul > 1 ? '　×2' : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
+    pop3d(`Lv${lv + 2} ${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : '') + (mul > 1 ? '　×2' : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
     if(lv >= 5) shake = 4 + lv;
   }
   $('score').textContent = score;
@@ -1016,6 +1018,7 @@ showTitle();
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
   get shelf(){ return shelf.map(s => s && {x:Math.round(s.x), lv:s.lv, ready:s.ready}) }, get held(){ return held },
-  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) }};</script>
+  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) },
+  sameX(lv){ let best = null; for(const b of Composite.allBodies(world)) if(b.label === 'mac' && !b.isStatic && !b.kind && b.lv === lv && (!best || b.position.y < best.position.y)) best = b; return best && Math.round(best.position.x) }};   // 自動で遊ぶ試験が使う</script>
 </body>
 </html>
