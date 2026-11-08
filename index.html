@@ -47,6 +47,11 @@
   #over .got{font-size:30px;color:var(--pink)}
   #err{display:none;padding:24px;text-align:center}
 
+  /* フィーバー中: 背景が虹色に流れ、スコアが跳ねる */
+  body.fever{background:linear-gradient(120deg,#ffe3ef,#fff6c8,#dff3ff,#efe3ff,#ffe3ef);background-size:400% 400%;animation:fever 2s linear infinite}
+  body.fever #score{color:var(--pink);animation:bump .45s ease infinite}
+  @keyframes fever{to{background-position:400% 0}}
+
   /* ステージ一覧(クリア済み・次・まだ先) */
   #stageMap{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
   #stageMap li{border:var(--line) solid var(--ink);border-radius:14px;padding:8px 4px;background:#fff;font-size:var(--fs-xs);line-height:1.4}
@@ -104,7 +109,7 @@
 <div id="title" class="layer" style="display:flex"><div class="panel">
   <p class="kicker">24Hユウキ↑ゲームズ</p>
   <h1 class="ttl">マカロン<br>ゲーム</h1>
-  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！</p>
+  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。</p>
   <p class="note" id="titleItems"></p>
   <button class="btn" id="startBtn">スタート</button>
   <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
@@ -168,12 +173,13 @@ const Sound = (() => {
     s.connect(g); g.connect(master); s.start();
   }
   function bgmDown(){ if(bgmGain) bgmGain.gain.setTargetAtTime(BGM_VOL*.35, ctx.currentTime, .4) }
+  function setRate(r){ if(bgmSrc) bgmSrc.playbackRate.setTargetAtTime(r, ctx.currentTime, .2) }   // フィーバー中は少し速く
   function toggle(){
     muted = !muted; localStorage.setItem('yuki-macaron-mute', muted ? '1' : '0');
     if(master) master.gain.value = muted ? 0 : 1;
     return muted;
   }
-  return {start, play, bgmDown, toggle, get muted(){ return muted }};
+  return {start, play, bgmDown, setRate, toggle, get muted(){ return muted }};
 })();
 
 // ---- ルール(第1段階の仕様) ----
@@ -331,7 +337,10 @@ function makeMacaronMesh(lv){
   return outer;
 }
 const meshes = new Map();   // body.id → 立体
-function addMacaron(b){ const m = makeMacaronMesh(b.lv); meshes.set(b.id, m); scene.add(m); return m }
+function addMacaron(b){
+  const m = b.kind === 'bomb' ? makeBombMesh() : b.kind === 'burnt' ? makeBurntMesh(b.lv) : makeMacaronMesh(b.lv);
+  meshes.set(b.id, m); scene.add(m); return m;
+}
 function removeMacaron(b){ const m = meshes.get(b.id); if(m){ scene.remove(m); meshes.delete(b.id) } }
 const toWorld = (x, y) => new THREE.Vector3(x - W/2, H - y, 0);
 
@@ -523,7 +532,7 @@ showMute();
 for(const id of ['cycleGo', 'cycleEnd', 'titleShop', 'overShop', 'shopBack']) $(id).addEventListener('click', () => Sound.play('click'));
 $('shopList').addEventListener('click', e => { if(e.target.closest('button')) Sound.play('click') });
 
-const CYCLE = 3;
+const CYCLE = 5;   // 5ステージごとにステージ一覧へ(2026-11-08本人「5ステージごとにしましょう。テンポが良くなってきたので」。前は3)
 let paused = false;
 const stageLog = [];   // クリアしたステージの {got, q}
 function askCycle(){
@@ -596,8 +605,11 @@ function fillShelf(i){
     x = r + Math.random()*(W - 2*r);
     if(!o || Math.abs(x - o.x) > r + MAC[o.lv].r + 30) break;
   }
-  const body = makeBody(x, -120, lv, true); Composite.add(world, body); addMacaron(body).userData.pop = .001;
-  shelf[i] = {body, lv, x, y:-120, ready:false};
+  // ステージ2から、ときどき「ばくだん」が混ざる(棚の2枠が両方ばくだんにはしない)
+  const bomb = started && stage >= BOMB_FROM && !(o && o.body.kind === 'bomb') && Math.random() < BOMB_RATE;
+  const body = bomb ? makeBomb(x, -120, true) : makeBody(x, -120, lv, true);
+  Composite.add(world, body); addMacaron(body).userData.pop = .001;
+  shelf[i] = {body, lv:body.lv, x, y:-120, ready:false};
 }
 function initShelf(){ fillShelf(0); fillShelf(1) }
 // つかんだマカロンを x へ動かす。もう1個は押して一緒に動かし、壁で止める
@@ -615,10 +627,11 @@ function drop(){
   if(held < 0 || gameOver || paused) return;
   const s = shelf[held], lv = s.lv;
   Body.setStatic(s.body, false); Body.setVelocity(s.body, {x:0, y:2});
+  if(s.body.kind === 'bomb') s.body.armed = true;
   shelf[held] = null; const empty = held; held = -1; current = null; started = true;
   cloudDrop();
   Sound.play('drop', .92 + Math.random()*.16);
-  pop3d(MAC[lv].name, null, toWorld(s.x, SHELF_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
+  pop3d(s.body.kind === 'bomb' ? 'ばくだん！' : MAC[lv].name, null, toWorld(s.x, SHELF_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
   setTimeout(() => { if(!gameOver) fillShelf(empty) }, 450);
 }
 // 毎こま: 雲の高さと横位置、棚のマカロンの位置を進める
@@ -666,6 +679,7 @@ cv.addEventListener('pointercancel', () => { pressing = false; held = -1; curren
 // ぶつかったら、ぷるんと揺らす
 Events.on(engine, 'collisionStart', ev => {
   for(const p of ev.pairs){
+    for(const b of [p.bodyA, p.bodyB]) if(b.armed){ b.armed = false; setTimeout(() => explode(b), 280) }
     const rel =Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
     for(const b of [p.bodyA, p.bodyB]){ const m = meshes.get(b.id); if(m) m.userData.sv += Math.min(3.2, rel*.32) }
   }
@@ -683,7 +697,7 @@ function mergeStep(){
   const list = Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.merged);
   for(let i = 0; i < list.length; i++) for(let j = i + 1; j < list.length; j++){
     const a = list[i], b = list[j];
-    if(a.lv !== b.lv || a.merged || b.merged) continue;
+    if(a.lv !== b.lv || a.kind || b.kind || a.merged || b.merged) continue;   // ばくだん・こげはくっつかない
     const dx = b.position.x - a.position.x, dy = b.position.y - a.position.y, d = Math.hypot(dx, dy) || 1;
     if(d > reach(a, dx/d, dy/d) + reach(b, -dx/d, -dy/d) + MAC[a.lv].r*MERGE_SLACK + MERGE_PAD) continue;
     merge(a, b);
@@ -694,12 +708,20 @@ function merge(a, b){
   const x = (a.position.x + b.position.x)/2, y = (a.position.y + b.position.y)/2, lv = a.lv;
   Composite.remove(world, [a, b]); removeMacaron(a); removeMacaron(b);
   combo = comboTimer > 0 ? combo + 1 : 1; comboTimer = 75;
+  if(combo === FEVER_COMBO) startFever();
+  const mul = feverSteps > 0 ? 2 : 1;
+  // すぐ横のこげマカロンは、くっついた勢いで一緒に消える
+  const near = MAC[Math.min(lv + 1, MAC.length - 1)].r + 16;
+  for(const c of Composite.allBodies(world)){
+    if(c.kind !== 'burnt' || c.merged) continue;
+    if(Math.hypot(c.position.x - x, c.position.y - y) < near + MAC[c.lv].r) clearOne(c, 3*mul, 'こげ消し！');
+  }
   // くっつく音: 大きく育つほど・コンボが続くほど高くする
   if(lv >= 4) Sound.play('grow', .9 + (lv - 4)*.06);
   else Sound.play('merge', 1 + lv*.1 + Math.min(combo - 1, 6)*.05);
   const at = toWorld(x, y);
   if(lv === MAC.length - 1){
-    const pts = SCORE[lv]*4; score += pts;
+    const pts = SCORE[lv]*4*mul; score += pts;
     burst(at, MAC[lv].s, 60, 2.2);
     pop3d('いちごパーティ！', `+${pts}`, at, 44, '#ff3d8b');
     shake = 14;
@@ -707,13 +729,89 @@ function merge(a, b){
     const n = makeBody(x, y, lv + 1); Composite.add(world, n);
     Body.setVelocity(n, {x:0, y:-2});
     const m = addMacaron(n); m.userData.pop = 0.001;
-    const pts = SCORE[lv]; score += pts;
+    const pts = SCORE[lv]*mul; score += pts;
     burst(at, MAC[lv+1].c, 10 + lv*4, 1 + lv*.15);
-    pop3d(`${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
+    pop3d(`${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : '') + (mul > 1 ? '　×2' : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
     if(lv >= 5) shake = 4 + lv;
   }
   $('score').textContent = score;
   $('score').classList.remove('bump'); void $('score').offsetWidth; $('score').classList.add('bump');
+}
+
+// ---- 熱中させる仕掛け(2026-11-08本人「熱中させるパッションのギミックがないね。爆破で消えるとか邪魔者が飛んでくるとか」) ----
+// 中身は私の仮置き(本人未確認)。ばくだん=ステージ2から棚に混ざる / こげマカロン=ステージ3から上から降る / フィーバー=5コンボで8秒間 点×2
+const BOMB_FROM = 2, BOMB_RATE = .14, BOMB_R = 40, BOMB_REACH = 150;
+const BURNT_FROM = 3, burntEvery = () => Math.max(6, 15 - stage);   // 秒。ステージが進むほど短く
+const FEVER_COMBO = 5, FEVER_SEC = 8;
+let feverSteps = 0, burntTimer = 8*60;
+function makeBomb(x, y, st){
+  const b = Bodies.circle(x, y, BOMB_R, {isStatic:st, restitution:.1, friction:.4, density:.003, label:'mac'});
+  b.lv = 1; b.kind = 'bomb'; return b;
+}
+const bombMat = new THREE.MeshPhysicalMaterial({color:0x2a2340, roughness:.35, clearcoat:.8});
+const fuseMat = new THREE.MeshStandardMaterial({color:0xc9a26b, roughness:.9});
+const sparkMat = new THREE.MeshStandardMaterial({color:0xffd23f, emissive:0xff7a1a, emissiveIntensity:2});
+function makeBombMesh(){
+  const outer = new THREE.Group(), jig = new THREE.Group(); outer.add(jig);
+  const ball = new THREE.Mesh(geo.eye, bombMat); ball.scale.setScalar(BOMB_R); ball.castShadow = true; jig.add(ball);
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 18, 8), fuseMat); fuse.position.y = BOMB_R + 6; fuse.rotation.z = .3; jig.add(fuse);
+  const spark = new THREE.Mesh(geo.eye, sparkMat); spark.scale.setScalar(7); spark.position.set(-4, BOMB_R + 16, 0); jig.add(spark);
+  for(const sx of [-1, 1]){ const e = new THREE.Mesh(geo.eye, new THREE.MeshBasicMaterial({color:0xffffff})); e.scale.setScalar(6); e.position.set(sx*12, 6, BOMB_R - 4); jig.add(e) }
+  outer.userData = {sq:0, sv:0, w:0, wv:0, lvx:0, pop:0, t:0, spark};
+  return outer;
+}
+const burntShell = new THREE.MeshStandardMaterial({color:0x5b4a42, roughness:.95});
+const burntCream = new THREE.MeshStandardMaterial({color:0x8a7a70, roughness:.95});
+function makeBurntMesh(lv){
+  const m = makeMacaronMesh(lv), P = PARTS[lv];
+  m.traverse(o => { if(o.material === P.shell || o.material === P.foot) o.material = burntShell; else if(o.material === P.cream) o.material = burntCream });
+  return m;
+}
+// 1個を消して点を入れる(爆発・こげ消しで使う)
+function clearOne(c, pts, label){
+  c.merged = true;
+  Composite.remove(world, c); removeMacaron(c);
+  score += pts;
+  const at = toWorld(c.position.x, c.position.y);
+  burst(at, c.kind === 'burnt' ? '#5b4a42' : MAC[c.lv].c, 14, 1.2);
+  if(label) pop3d(label, `+${pts}`, at, 24, '#8a7a70');
+  $('score').textContent = score;
+}
+// ばくだん: 落として何かに当たると、少しして爆発。まわりをまとめて消し、ふつうの2倍の点
+function explode(bomb){
+  if(bomb.merged || gameOver) return;
+  bomb.merged = true;
+  const bx = bomb.position.x, by = bomb.position.y, mul = feverSteps > 0 ? 2 : 1;
+  Composite.remove(world, bomb); removeMacaron(bomb);
+  let sum = 0, n = 0;
+  for(const c of Composite.allBodies(world)){
+    if(c.label !== 'mac' || c.isStatic || c.merged) continue;
+    if(Math.hypot(c.position.x - bx, c.position.y - by) > BOMB_REACH + MAC[c.lv].r*.5) continue;
+    const pts = (c.kind === 'burnt' ? 5 : SCORE[c.lv]*2)*mul;
+    clearOne(c, pts); sum += pts; n++;
+  }
+  const at = toWorld(bx, by);
+  burst(at, '#ffd23f', 70, 2.6); burst(at, '#ff7a1a', 40, 2);
+  pop3d('ドカーン！', n ? `${n}個 +${sum}` : 'からぶり', at, 46, '#ff7a1a');
+  shake = 16; Sound.play('grow', .6, 1.4); Sound.play('rush', .8);
+}
+// こげマカロン: 上からときどき降ってくる。何ともくっつかない。横でくっつくか、ばくだんで消える
+function spawnBurnt(){
+  const lv = 1 + Math.floor(Math.random()*3), r = MAC[lv].r + 4, x = r + Math.random()*(W - 2*r);
+  const b = makeBody(x, -60, lv); b.kind = 'burnt'; Composite.add(world, b);
+  Body.setVelocity(b, {x:(Math.random()*2 - 1)*2, y:3}); addMacaron(b).userData.pop = .001;
+  pop3d('こげマカロンが来た！', '横でくっつけて消そう', new THREE.Vector3(x - W/2, H*.8, DEPTH/2 + 20), 26, '#8a7a70');
+  Sound.play('over', 1.5, .7);
+}
+function startFever(){
+  feverSteps = FEVER_SEC*60;
+  document.body.classList.add('fever');
+  pop3d('フィーバー！', `${FEVER_SEC}秒間 点×2`, new THREE.Vector3(0, H*.6, DEPTH/2 + 20), 48, '#ff3d8b');
+  Sound.setRate(1.12); Sound.play('clear', 1.3);
+}
+function gimmickStep(){
+  if(feverSteps > 0 && --feverSteps === 0){ document.body.classList.remove('fever'); Sound.setRate(1) }
+  if(started && stage >= BURNT_FROM && --burntTimer <= 0){ spawnBurnt(); burntTimer = burntEvery()*60 }
 }
 
 let shake = 0;
@@ -730,6 +828,7 @@ function physicsStep(){
   if(overSteps > 90 && !gameOver){ endGame('full'); return }
   stageStep();
   if(gameOver) return;
+  gimmickStep();
   const want = Math.min(DECO_MAX, Math.floor(score / DECO_STEP));
   if(decos.length < want){
     makeDeco(decos.length);
@@ -738,6 +837,7 @@ function physicsStep(){
 }
 async function endGame(why){
   gameOver = true;
+  document.body.classList.remove('fever'); feverSteps = 0;
   Sound.play(why === 'cycle' ? 'clear' : 'over'); Sound.bgmDown();
   $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' ? 'おつかれさま！' : 'ゲームオーバー';
   $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
@@ -862,12 +962,12 @@ function frame(now){
     const sq = u.sq + idle;
     const jig = m.children[0];
     // 抱えているのと同じ種類は、光に合わせてふくらんだり縮んだりして目立たせる
-    if(current && b.lv === current.lv && !b.isStatic) s *= 1 + .07*(.5 + .5*Math.sin(now/170));
+    if(current && !current.kind && !b.kind && b.lv === current.lv && !b.isStatic) s *= 1 + .07*(.5 + .5*Math.sin(now/170));
     jig.scale.set(s*(1 + sq*.6), s*(1 - sq), s*(1 + sq*.6));
     jig.rotation.z = reduce ? 0 : u.w;
   }
   { // 抱えているマカロンと同じ種類を、箱の中で脈打つように光らせる(殻とクリームの材質は種類ごとに共有なので、材質の光を変える)
-    const hold = current ? current.lv : -1, glow = .6 + .4*Math.sin(now/170);
+    const hold = current && !current.kind ? current.lv : -1, glow = .6 + .4*Math.sin(now/170);
     PARTS.forEach((P, lv) => {
       const on = lv === hold;
       for(const mat of [P.shell, P.cream]){
