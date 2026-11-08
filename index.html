@@ -3,27 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>マカロンゲーム</title>
+<title>マカロンゲーム | 24Hユウキ↑ゲームズ</title>
+<link rel="stylesheet" href="../shared/yuki.css">
 <style>
-  html,body{margin:0;height:100%;background:#fff3f6;font-family:system-ui,sans-serif;touch-action:none;overflow:hidden}
-  #wrap{display:flex;flex-direction:column;align-items:center;height:100%}
-  #hud{display:flex;gap:24px;padding:8px;font-size:18px;color:#8a4b5e;align-items:center}
-  #next{display:inline-block;vertical-align:middle;border-radius:50%;border:2px solid #d9a0b3}
-  canvas{background:#fffafc;border:4px solid #e7b8c6;border-top:none;border-radius:0 0 16px 16px;display:block}
-  #over{position:fixed;inset:0;background:rgba(255,240,245,.9);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#8a4b5e;font-size:24px}
-  button{font-size:18px;padding:10px 24px;border:none;border-radius:999px;background:#f28cb1;color:#fff}
+  html,body{height:100%;touch-action:none;overflow:hidden}
+  body{background:var(--paper-2)}
+  #wrap{display:flex;flex-direction:column;align-items:center;height:calc(100% - 64px)}
+  #hud{display:flex;gap:20px;padding:10px 8px;align-items:center;font-weight:800}
+  #hud .lbl{font-size:var(--fs-xs);color:var(--ink-soft);margin-right:.3em}
+  #score{font-size:var(--fs-l)}
+  #next{display:inline-block;width:26px;height:26px;vertical-align:middle;border-radius:50%;border:var(--line) solid var(--ink)}
+  canvas{background:var(--paper);border:var(--line) solid var(--ink);border-top:none;border-radius:0 0 var(--r) var(--r);display:block;box-shadow:var(--shadow)}
+  #over{position:fixed;inset:0;background:rgba(27,20,70,.55);display:none;align-items:center;justify-content:center;padding:20px}
+  #over .panel{width:min(360px,100%);padding:28px 24px;text-align:center;display:flex;flex-direction:column;gap:12px}
+  #over h2{font-size:var(--fs-xl)}
+  #over .got{font-size:30px;color:var(--pink)}
 </style>
 </head>
 <body>
+<header class="bar">
+  <a class="logo" href="../"><span class="h24">24H</span>ユウキ<span class="arrow">↑</span>ゲームズ</a>
+  <span class="wallet"><small>所持金</small><span id="yen" class="num">0円</span></span>
+</header>
 <div id="wrap">
-  <div id="hud">スコア: <b id="score">0</b> <span>ネクスト: <span id="next"></span></span></div>
+  <div id="hud"><span><span class="lbl">スコア</span><b id="score" class="num">0</b></span><span><span class="lbl">ネクスト</span><span id="next"></span></span></div>
   <canvas id="c"></canvas>
 </div>
-<div id="over"><div>ゲームオーバー</div><div>スコア: <b id="final">0</b></div><button onclick="location.reload()">もう一回</button></div>
+<div id="over"><div class="panel">
+  <h2>ゲームオーバー</h2>
+  <p>スコア <b id="final" class="num">0</b></p>
+  <p>もらえた円<br><b id="got" class="got num">0円</b></p>
+  <p class="note" id="perkNote"></p>
+  <button class="btn" onclick="location.reload()">もう一回</button>
+  <a class="btn sub" href="../#trade">株を見る</a>
+</div></div>
+<script src="../shared/yuki.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script>
+const GAME_ID='macaron-game';
+document.getElementById('yen').textContent=Yuki.yen(Yuki.state.yen);
 const {Engine,Render,Runner,Bodies,Body,Composite,Events,World}=Matter;
-const W=Math.min(420,window.innerWidth-16), H=Math.min(620,window.innerHeight-70);
+const W=Math.min(420,window.innerWidth-16), H=Math.min(620,window.innerHeight-140);
 const LINE=110;
 const MAC=[
  {name:'ミント',   r:18,c:'#9fe3c8',s:'#5fbf9c'},
@@ -62,7 +82,7 @@ function spawn(){
   World.add(engine.world,current);
   showNext();
 }
-function showNext(){const n=document.getElementById('next');const m=MAC[nextLv];n.style.width=n.style.height='22px';n.style.background=m.c;n.title=m.name;}
+function showNext(){const n=document.getElementById('next');const m=MAC[nextLv];n.style.background=m.c;n.title=m.name;}
 
 let px=W/2;
 function moveTo(x){ if(!current||gameOver)return; const r=MAC[current.lv].r+4; px=Math.max(r,Math.min(W-r,x)); Body.setPosition(current,{x:px,y:55}); }
@@ -109,7 +129,15 @@ Events.on(render,'afterRender',()=>{
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.l--;ctx.globalAlpha=p.l/30;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();if(p.l<=0)parts.splice(i,1);}
   ctx.globalAlpha=1;
   overTimer=over?overTimer+1:0;
-  if(overTimer>90&&!gameOver){gameOver=true;document.getElementById('final').textContent=score;document.getElementById('over').style.display='flex';}
+  if(overTimer>90&&!gameOver){
+    gameOver=true;
+    const got=Yuki.earn(GAME_ID,score);
+    document.getElementById('final').textContent=score;
+    document.getElementById('got').textContent='+'+Yuki.yen(got);
+    document.getElementById('yen').textContent=Yuki.yen(Yuki.state.yen);
+    if(Yuki.hasPerk(GAME_ID))document.getElementById('perkNote').textContent='株主優待で1.2倍になりました';
+    document.getElementById('over').style.display='flex';
+  }
 });
 spawn();
 </script>
