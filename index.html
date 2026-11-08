@@ -76,12 +76,37 @@
   .layer .ttl{font-size:var(--fs-hero);line-height:1.05;color:var(--pink);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;
     text-shadow:2px 2px 0 var(--ink),4px 4px 0 var(--ink)}
   .layer h2{font-size:var(--fs-xl)}
-  #shopList{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;text-align:left}
-  #shopList li{display:flex;align-items:center;gap:10px;border:var(--line) solid var(--ink);border-radius:14px;padding:10px 12px;background:#fff}
-  #shopList .ic{font-size:28px}
-  #shopList .tx{flex:1;font-size:var(--fs-s);line-height:1.5}
-  #shopList .tx b{display:block;font-size:var(--fs-m)}
-  #shopList button{min-height:44px;padding:0 14px;font-size:var(--fs-s)}
+  /* いまの点の倍率(スキル・フィーバーが掛け合わさる) */
+  #mulTag{font-size:var(--fs-s);color:var(--pink);margin-left:.3em}
+  /* スキルツリーのボタン: 遊ぶ場所の右上 */
+  #treeBtn{position:absolute;right:12px;top:8px;z-index:5;font:inherit;font-size:var(--fs-s);font-weight:800;min-height:44px;padding:0 14px;
+    border:var(--line) solid var(--ink);border-radius:var(--r-pill);background:#fff;color:var(--ink);box-shadow:var(--shadow);cursor:pointer;white-space:nowrap}
+  #treeBtn.can{background:var(--sun);animation:bump 1.2s ease infinite}
+  /* 左端: マカロンの種類ごとのレベル(Lv.5 なら点×5) */
+  #kinds{position:absolute;left:6px;top:8px;z-index:4;display:flex;flex-direction:column;gap:3px;pointer-events:none}
+  #kinds .kind{display:flex;align-items:center;gap:5px;padding:2px 8px 2px 4px;border-radius:var(--r-pill);background:rgba(255,255,255,.82);
+    font-size:var(--fs-xs);font-weight:800;white-space:nowrap;color:var(--ink-soft)}
+  #kinds .kind.up{color:var(--ink)}
+  #kinds .kind.hit{animation:bump .5s ease}
+  #kinds .mc{width:26px;height:18px;border:2px solid var(--ink);border-radius:50%/45%;flex:none;
+    background:linear-gradient(var(--c) 0 38%,#fff8ee 38% 62%,var(--c) 62%);box-shadow:inset 0 -3px 0 var(--s)}
+  /* スキルツリー: 根が下、枝が上へのびる図 */
+  #skills .panel{width:min(420px,100%);padding:20px 16px;gap:8px}
+  #tree{width:100%;height:auto;background:radial-gradient(circle at 50% 95%,#fff6c8,#fff0f5 45%,#eef3ff);border:var(--line) solid var(--ink);border-radius:18px}
+  #tree .edge{fill:none;stroke:#c9c3dc;stroke-width:6;stroke-linecap:round}
+  #tree .edge.open{stroke:#b9a8e6;stroke-dasharray:2 10}
+  #tree .edge.got{stroke:var(--pink)}
+  #tree .node{cursor:pointer}
+  #tree .node circle{fill:#fff;stroke:var(--ink);stroke-width:3}
+  #tree .node.got circle{fill:#ffe3ef}
+  #tree .node.lock{opacity:.45}
+  #tree .node.can circle{fill:var(--sun)}
+  #tree .node.pick circle{stroke:var(--pink);stroke-width:5}
+  #tree .ic{font-size:22px;text-anchor:middle}
+  #tree .lvl{font-size:12px;font-weight:800;text-anchor:middle;fill:var(--ink)}
+  #treeInfo{display:flex;flex-direction:column;gap:6px;text-align:left;font-size:var(--fs-s);line-height:1.5;min-height:110px}
+  #treeInfo b{font-size:var(--fs-m)}
+  #treeInfo .btn{align-self:stretch}
 </style>
 </head>
 <body>
@@ -90,10 +115,10 @@
   <div class="bar-right"><span id="who"></span><span class="wallet"><small>所持金</small><span id="yen" class="num">0円</span></span></div>
 </header>
 <div id="hud">
-  <span><span class="lbl">スコア</span><b id="score" class="num">0</b></span>
+  <span><span class="lbl">スコア</span><b id="score" class="num">0</b><b id="mulTag" class="num"></b></span>
   <span><span class="lbl" id="stageLbl">ステージ1</span><b id="quota" class="num">0/40</b></span>
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span></div>
-<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button><button type="button" id="treeBtn">🌳 スキル</button><div id="kinds" aria-label="マカロンごとのレベル"></div></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2 id="overTitle">ゲームオーバー</h2>
@@ -102,17 +127,14 @@
   <p>もらえた円<br><b id="got" class="got num">0円</b></p>
   <p class="note" id="perkNote"></p>
   <button class="g-login" id="overLogin" data-yuki-login style="display:none;align-self:center">Googleでログイン</button>
-  <button class="btn sub" id="overShop" style="display:none">アイテムと交換する</button>
   <button class="btn" onclick="location.reload()">タイトルへ</button>
   <a class="btn sub" href="../#trade">株を見る</a>
 </div></div>
 <div id="title" class="layer" style="display:flex"><div class="panel">
   <p class="kicker">24Hユウキ↑ゲームズ</p>
   <h1 class="ttl">マカロン<br>ゲーム</h1>
-  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。</p>
-  <p class="note" id="titleItems"></p>
+  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
   <button class="btn" id="startBtn">スタート</button>
-  <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
   <p class="note" style="font-size:var(--fs-xs)">音楽 MintoDog「Cozy Puzzle」・効果音 Kenney(どちらも CC0)</p>
 </div></div>
 <div id="cycle" class="layer"><div class="panel">
@@ -120,20 +142,22 @@
   <p class="note" id="cycleNote"></p>
   <ol id="stageMap"></ol>
   <button class="btn" id="cycleGo">次のステージへ</button>
+  <button class="btn sub" id="cycleTree">🌳 スキルツリー</button>
   <button class="btn sub" id="cycleEnd">ここで終える</button>
 </div></div>
-<div id="shop" class="layer"><div class="panel">
-  <h2>アイテム交換</h2>
-  <p>交換に使える面数 <b id="shopPts" class="num">0</b>面</p>
-  <p class="note">2周目以降まで進んで終わると、クリアした面数が貯まります。アイテムは次に遊ぶときに1つずつ使われます。</p>
-  <ul id="shopList"></ul>
-  <button class="btn" id="shopBack">タイトルへ</button>
+<div id="skills" class="layer"><div class="panel">
+  <h2>スキルツリー</h2>
+  <p>シュガー <b id="sugar" class="num">0</b>　<span class="note">(このランだけ。開いている間は止まります)</span></p>
+  <svg id="tree" viewBox="0 0 340 460" aria-label="スキルツリー"></svg>
+  <div id="treeInfo"></div>
+  <button class="btn sub" id="skillsBack">ゲームにもどる</button>
 </div></div>
 <script src="../shared/yuki.js?v=dev"></script>
 <script src="../shared/vendor/matter.min.js"></script>
 <script type="importmap">{"imports":{"three":"../shared/vendor/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import * as Skill from './skills.js?v=game';
 
 const GAME_ID = 'macaron-game';
 const $ = id => document.getElementById(id);
@@ -208,8 +232,9 @@ const MERGE_SLACK = 0.3, MERGE_PAD = 4;
 // 1ステージ60秒。時間いっぱいまで遊び、時間が来た時点でそのステージで稼いだ点がノルマを超えていれば次の周へ、超えていなければゲームオーバー
 // (2026-11-08本人「制限時間まで遊べてノルマを超えていないとゲームオーバー」)
 const STAGE_SEC = 60;
-// 点が段階ごとに2倍になったので、ノルマも毎ステージ2倍にする(2026-11-08。前は 60×1.6^(n-1))。スキルツリーで倍率を育てないと追いつかない強さが狙い。人が遊んでの強さは仮説
-const quotaOf = n => Math.round(100 * Math.pow(2, n - 1));     // 100, 200, 400, 800, 1600 …
+// 点が段階ごとに2倍、さらに種類ごとのレベルが掛かって雪だるま式に増えるので、ノルマも毎ステージ3倍にする(2026-11-08。前は 60×1.6^(n-1))
+// スキルツリーで倍率を育てないと追いつかない強さが狙い。自動の試し打ち(同じ種類の上へ運ぶ)はステージ1で約1万4千点だった。人が遊んでの強さは仮説
+const quotaOf = n => Math.round(1000 * Math.pow(3, n - 1));    // 1000, 3000, 9000, 27000, 81000 …
 const DROP_LVS = 4;                                             // 上から落ちてくるのは 0〜3 の4種
 const rnd = () => Math.floor(Math.random() * DROP_LVS);
 // マカロンラッシュ: そのステージの点がノルマの半分を超えたら1回、落ちてくる種類の中でいちばん価値の高いマカロンを8個降らせる(2026-11-08本人)
@@ -478,10 +503,39 @@ let score = 0, gameOver = false, current = null, overSteps = 0;   // current = �
 let combo = 0, comboTimer = 0;
 // 時計は最初の1個を落としたときから動く。こま数(60こまで1秒)で数えるので、タブを隠している間は止まる
 let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDone = false;
-// アイテムの効き目(タイトルで遊び始めるときに、持っているものを1つずつ使う)
-let extraSec = 0, quotaRate = 1;
-const quotaNow = () => Math.round(quotaOf(stage) * quotaRate);
-const stageSteps = () => (STAGE_SEC + extraSec)*60;
+// スキルの効き目(skills.js)。ノルマの割引はすぐ、時間はステージの始めに効く
+const quotaNow = () => Math.round(quotaOf(stage) * Skill.fx.quotaRate());
+const stageSteps = () => (STAGE_SEC + Skill.fx.extraSec())*60;
+// いまの点の倍率 = スキル × フィーバー × コンボ。HUD にも出す
+function pointMul(){
+  return Skill.fx.scoreMul() * (feverSteps > 0 ? Skill.fx.feverMul() : 1) * (1 + Skill.fx.comboRate()*Math.max(0, combo - 1));
+}
+function showMul(){
+  const m = pointMul();
+  $('mulTag').textContent = m > 1.001 ? `×${+m.toFixed(1)}` : '';
+  $('sugar').textContent = Skill.run.sugar;
+  // 買えるノードがあるときは、ボタンを光らせる
+  $('treeBtn').classList.toggle('can', Skill.NODES.some(n => { const c = Skill.nextCost(n); return c != null && Skill.isOpen(n) && Skill.run.sugar >= c }));
+}
+// 種類ごとのレベル(2026-11-08本人「画面の左端のマカロンの絵とLv.x5 みたいな表示を。レベル5で5倍ってこと」)
+// どの種類も Lv.1 から。その種類をくっつけるたびに1つ上がり、その種類の点にレベルの数を掛ける。ランごとに戻る
+const kindLv = MAC.map(() => 1);
+function showKinds(hit){
+  const box = $('kinds');
+  if(!box.children.length) MAC.forEach((m, i) => {
+    const row = document.createElement('div'); row.className = 'kind';
+    row.innerHTML = `<i class="mc" style="--c:${m.c};--s:${m.s}"></i><span></span>`;
+    row.title = m.name; box.append(row);
+  });
+  MAC.forEach((m, i) => {
+    const row = box.children[i];
+    row.lastChild.textContent = `Lv.${kindLv[i]} ×${kindLv[i]}`;
+    row.classList.toggle('up', kindLv[i] > 1);
+    if(i === hit){ row.classList.remove('hit'); void row.offsetWidth; row.classList.add('hit') }
+  });
+}
+// クリアでもらうシュガー: 3 + ノルマを超えた分(2倍で+2、最大+6) + 壺
+const sugarOf = (got, q) => 3 + Math.min(6, Math.floor(2*(got/q - 1))) + Skill.fx.sugarPlus();
 function showStage(){
   const got = score - stageBase, q = quotaNow(), sec = Math.ceil(stepsLeft/60);
   $('stageLbl').textContent = `ステージ${stage}`;
@@ -498,12 +552,14 @@ function stageStep(){
   // 時間が来た: ノルマを超えていれば次の周へ、超えていなければゲームオーバー
   if(got > q){
     // クリア: 「ステージNクリア！」と花吹雪(2026-11-08本人)
-    pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
+    const sg = sugarOf(got, q); Skill.run.sugar += sg;
+    pop3d(`ステージ${stage}クリア！`, `シュガー +${sg}　次のノルマ ${Math.round(quotaOf(stage + 1)*Skill.fx.quotaRate())}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
     petals(); Sound.play('clear', 1, 1.2);
     stageLog.push({got, q});
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
-    showStage();
+    showStage(); showMul();
+    if(Skill.fx.rushStart()) setTimeout(rush, 1600);
     // 3ステージで一区切り。続けるか、ここで終えるかを聞く(2026-11-08本人「ワンサイクル3ステージで一旦タイトルに戻るか続けるかを聞く」)
     if((stage - 1) % CYCLE === 0){ paused = true; setTimeout(askCycle, 1400) }
   }else{
@@ -531,8 +587,28 @@ const showMute = () => { $('muteBtn').textContent = Sound.muted ? '🔇' : '🔊
 $('muteBtn').onclick = () => { Sound.start(); Sound.toggle(); showMute() };
 showMute();
 // 画面のボタンを押したときの小さな音
-for(const id of ['cycleGo', 'cycleEnd', 'titleShop', 'overShop', 'shopBack']) $(id).addEventListener('click', () => Sound.play('click'));
-$('shopList').addEventListener('click', e => { if(e.target.closest('button')) Sound.play('click') });
+for(const id of ['cycleGo', 'cycleEnd', 'cycleTree', 'treeBtn', 'skillsBack']) $(id).addEventListener('click', () => Sound.play('click'));
+$('treeInfo').addEventListener('click', e => { if(e.target.closest('button')) Sound.play('click') });
+$('tree').addEventListener('click', e => { if(e.target.closest('.node')) Sound.play('click') });
+
+// ---- スキルツリーを開く・閉じる(開いている間は止める) ----
+let treeFrom = null;   // 'game' か 'cycle'
+function openTree(from){
+  treeFrom = from; paused = true;
+  if(from === 'cycle') $('cycle').style.display = 'none';
+  Skill.draw($('tree'), $('treeInfo'), n => { Sound.play('grow', 1.2); showMul(); showStage() });
+  showMul();
+  $('skills').style.display = 'flex';
+}
+function closeTree(){
+  $('skills').style.display = 'none';
+  if(treeFrom === 'cycle') $('cycle').style.display = 'flex';
+  else paused = false;
+  showMul();
+}
+$('treeBtn').onclick = () => { if(!gameOver && !paused && $('title').style.display === 'none') openTree('game') };
+$('cycleTree').onclick = () => openTree('cycle');
+$('skillsBack').onclick = closeTree;
 
 const CYCLE = 5;   // 5ステージごとにステージ一覧へ(2026-11-08本人「5ステージごとにしましょう。テンポが良くなってきたので」。前は3)
 let paused = false;
@@ -543,7 +619,7 @@ function askCycle(){
   $('cycleNote').textContent = `ここまでのスコア ${score}。ここで終えると、円とクリアした${stage - 1}面を受け取れます。`;
   $('stageMap').innerHTML = '';
   for(let n = 1; n < stage + CYCLE; n++){
-    const li = document.createElement('li'), q = Math.round(quotaOf(n)*quotaRate);
+    const li = document.createElement('li'), q = Math.round(quotaOf(n)*Skill.fx.quotaRate());
     if(n < stage){ li.className = 'done'; li.innerHTML = `<b>ステージ${n}</b>${stageLog[n - 1].got}/${stageLog[n - 1].q}点` }
     else if(n === stage){ li.className = 'next'; li.innerHTML = `<b>ステージ${n}</b>つぎ<br>ノルマ${q}` }
     else { li.className = 'lock'; li.innerHTML = `<b>ステージ${n}</b>ノルマ${q}` }
@@ -601,14 +677,15 @@ const shelfR = s => MAC[s.lv].r + 4;
 const shelfClamp = (s, x) => Math.max(shelfR(s), Math.min(W - shelfR(s), x));
 // 空いた枠へ、もう1個と離れたばらばらの横位置に、上から降らせる
 function fillShelf(i){
-  const lv = rnd(), r = MAC[lv].r + 4, o = shelf[1 - i];
+  // 上等な生地(スキル): ときどき1つ上の段階が出る
+  const lv = Math.min(DROP_LVS - 1, rnd() + (Math.random() < Skill.fx.upShelf() ? 1 : 0)), r = MAC[lv].r + 4, o = shelf[1 - i];
   let x = W/2;
   for(let k = 0; k < 30; k++){
     x = r + Math.random()*(W - 2*r);
     if(!o || Math.abs(x - o.x) > r + MAC[o.lv].r + 30) break;
   }
   // ステージ2から、ときどき「ばくだん」が混ざる(棚の2枠が両方ばくだんにはしない)
-  const bomb = started && stage >= BOMB_FROM && !(o && o.body.kind === 'bomb') && Math.random() < BOMB_RATE;
+  const bomb = started && stage >= BOMB_FROM && !(o && o.body.kind === 'bomb') && Math.random() < BOMB_RATE + Skill.fx.bombRate();
   const body = bomb ? makeBomb(x, -120, true) : makeBody(x, -120, lv, true);
   Composite.add(world, body); addMacaron(body).userData.pop = .001;
   shelf[i] = {body, lv:body.lv, x, y:-120, ready:false};
@@ -711,20 +788,22 @@ function merge(a, b){
   Composite.remove(world, [a, b]); removeMacaron(a); removeMacaron(b);
   combo = comboTimer > 0 ? combo + 1 : 1; comboTimer = 75;
   if(combo === FEVER_COMBO) startFever();
-  const mul = feverSteps > 0 ? 2 : 1;
+  const mul = pointMul(); showMul();
   // すぐ横のこげマカロンは、くっついた勢いで一緒に消える
   // 2個の真ん中からではなく、くっつく2個のそれぞれから測る(真ん中からだと、片方の真横に付いたこげが届かなかった)
   for(const c of Composite.allBodies(world)){
     if(c.kind !== 'burnt' || c.merged) continue;
     const touch = [a, b].some(p => Math.hypot(c.position.x - p.position.x, c.position.y - p.position.y) < MAC[lv].r + MAC[c.lv].r + 16);
-    if(touch) clearOne(c, 3*mul, 'こげ消し！');
+    if(touch) clearOne(c, Math.round(3*mul), 'こげ消し！');
   }
   // くっつく音: 大きく育つほど・コンボが続くほど高くする
   if(lv >= 4) Sound.play('grow', .9 + (lv - 4)*.06);
   else Sound.play('merge', 1 + lv*.1 + Math.min(combo - 1, 6)*.05);
   const at = toWorld(x, y);
+  // 種類ごとのレベル: くっつけた種類のレベルの数だけ点が掛かり、そのあとレベルが1つ上がる(本人「レベル5で5倍」)
+  const klv = kindLv[lv]; kindLv[lv]++; showKinds(lv);
   if(lv === MAC.length - 1){
-    const pts = SCORE[lv]*4*mul; score += pts;
+    const pts = Math.round(SCORE[lv]*4*klv*mul); score += pts;
     burst(at, MAC[lv].s, 60, 2.2);
     pop3d('いちごパーティ！', `+${pts}`, at, 44, '#ff3d8b');
     shake = 14;
@@ -732,9 +811,9 @@ function merge(a, b){
     const n = makeBody(x, y, lv + 1); Composite.add(world, n);
     Body.setVelocity(n, {x:0, y:-2});
     const m = addMacaron(n); m.userData.pop = 0.001;
-    const pts = SCORE[lv]*mul; score += pts;
+    const pts = Math.round(SCORE[lv]*klv*mul); score += pts;
     burst(at, MAC[lv+1].c, 10 + lv*4, 1 + lv*.15);
-    pop3d(`Lv${lv + 2} ${MAC[lv+1].name}に！`, `+${pts}` + (combo >= 2 ? `　${combo}コンボ` : '') + (mul > 1 ? '　×2' : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
+    pop3d(`${MAC[lv+1].name}に！`, `+${pts}　${MAC[lv].name}Lv.${kindLv[lv]}` + (combo >= 2 ? `　${combo}コンボ` : ''), at.clone().add(new THREE.Vector3(0, MAC[lv+1].r*.9, 0)), 30 + lv*4, MAC[lv+1].c);
     if(lv >= 5) shake = 4 + lv;
   }
   $('score').textContent = score;
@@ -780,22 +859,22 @@ function clearOne(c, pts, label){
   if(label) pop3d(label, `+${pts}`, at, 24, '#8a7a70');
   $('score').textContent = score;
 }
-// ばくだん: 落として何かに当たると、少しして爆発。まわりをまとめて消し、ふつうの2倍の点
+// ばくだん: 落として何かに当たると、少しして爆発。まわりをまとめて消し、点に威力(はじめ×2。スキルで上がる)を掛ける
 function explode(bomb){
   if(bomb.merged || gameOver) return;
   bomb.merged = true;
-  const bx = bomb.position.x, by = bomb.position.y, mul = feverSteps > 0 ? 2 : 1;
+  const bx = bomb.position.x, by = bomb.position.y, mul = pointMul(), pow = Skill.fx.bombMul(), reach = BOMB_REACH*Skill.fx.bombReach();
   Composite.remove(world, bomb); removeMacaron(bomb);
   let sum = 0, n = 0;
   for(const c of Composite.allBodies(world)){
     if(c.label !== 'mac' || c.isStatic || c.merged) continue;
-    if(Math.hypot(c.position.x - bx, c.position.y - by) > BOMB_REACH + MAC[c.lv].r*.5) continue;
-    const pts = (c.kind === 'burnt' ? 5 : SCORE[c.lv]*2)*mul;
+    if(Math.hypot(c.position.x - bx, c.position.y - by) > reach + MAC[c.lv].r*.5) continue;
+    const pts = Math.round((c.kind === 'burnt' ? 5 : SCORE[c.lv]*kindLv[c.lv])*pow*mul);
     clearOne(c, pts); sum += pts; n++;
   }
   const at = toWorld(bx, by);
   burst(at, '#ffd23f', 70, 2.6); burst(at, '#ff7a1a', 40, 2);
-  pop3d('ドカーン！', n ? `${n}個 +${sum}` : 'からぶり', at, 46, '#ff7a1a');
+  pop3d('ドカーン！', n ? `${n}個 +${sum}　威力×${pow}` : 'からぶり', at, 46, '#ff7a1a');
   shake = 16; Sound.play('grow', .6, 1.4); Sound.play('rush', .8);
 }
 // こげマカロン: 上からときどき降ってくる。何ともくっつかない。横でくっつくか、ばくだんで消える
@@ -807,13 +886,14 @@ function spawnBurnt(){
   Sound.play('over', 1.5, .7);
 }
 function startFever(){
-  feverSteps = FEVER_SEC*60;
+  const sec = FEVER_SEC + Skill.fx.feverSec();
+  feverSteps = sec*60;
   document.body.classList.add('fever');
-  pop3d('フィーバー！', `${FEVER_SEC}秒間 点×2`, new THREE.Vector3(0, H*.6, DEPTH/2 + 20), 48, '#ff3d8b');
+  pop3d('フィーバー！', `${sec}秒間 点×${Skill.fx.feverMul()}`, new THREE.Vector3(0, H*.6, DEPTH/2 + 20), 48, '#ff3d8b');
   Sound.setRate(1.12); Sound.play('clear', 1.3);
 }
 function gimmickStep(){
-  if(feverSteps > 0 && --feverSteps === 0){ document.body.classList.remove('fever'); Sound.setRate(1) }
+  if(feverSteps > 0 && --feverSteps === 0){ document.body.classList.remove('fever'); Sound.setRate(1); showMul() }
   if(started && stage >= BURNT_FROM && --burntTimer <= 0){ spawnBurnt(); burntTimer = burntEvery()*60 }
 }
 
@@ -846,12 +926,6 @@ async function endGame(why){
   $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
     : why === 'cycle' ? '' : 'マカロンが線の上まであふれました。')
     + (stage > 1 ? `ステージ${stage - 1}までクリア。` : '');
-  // 2周目以降で終わったら、クリアした面数を交換の点にして、アイテム交換の画面へ行けるようにする(2026-11-08本人)
-  if(stage > 1){
-    const s = loadBag(); s.pts += stage - 1; s.unlocked = true; saveBag(s);
-    $('overShop').textContent = `アイテムと交換する(+${stage - 1}面)`;
-    $('overShop').style.display = 'inline-flex';
-  }
   $('final').textContent = score;
   $('got').textContent = '…';
   $('over').style.display = 'flex';
@@ -871,63 +945,18 @@ async function endGame(why){
   }
 }
 
-// ---- アイテムとタイトル(2026-11-08本人「2周回め以降のゲームオーバーでクリアした面数でアイテムと交換できる画面に行ける。
-//      この条件を1回でもクリアしたらタイトルにアイテムGETのボタンが出てくる」) ----
-// 持ち物はこの端末の中(localStorage)に置く。サーバーで持つかは、ジュエル・アクセサリーと一緒に決める
-const BAG_KEY = 'yuki-macaron-bag-v1';
-const ITEMS = [
-  {id:'hourglass', ic:'⏳', name:'砂時計',   cost:2, desc:'各ステージの時間が10秒のびる'},
-  {id:'whisk',     ic:'🥄', name:'泡立て器', cost:3, desc:'すべてのノルマが2割引きになる'},
-  {id:'tongs',     ic:'✨', name:'金のトング', cost:5, desc:'始まってすぐマカロンラッシュが1回来る'},
-];
-function loadBag(){
-  let s; try{ s = JSON.parse(localStorage.getItem(BAG_KEY)) }catch(e){}
-  s = s && typeof s === 'object' ? s : {};
-  return {pts: Math.max(0, s.pts|0), unlocked: !!s.unlocked, items: Object.assign({hourglass:0, whisk:0, tongs:0}, s.items)};
-}
-function saveBag(s){ localStorage.setItem(BAG_KEY, JSON.stringify(s)) }
-function ownedText(s){
-  const have = ITEMS.filter(it => s.items[it.id] > 0).map(it => `${it.ic}${it.name}×${s.items[it.id]}`);
-  return have.length ? `持っているアイテム: ${have.join('　')}(次に遊ぶときに1つずつ使います)` : '';
-}
-function showTitle(){
-  const s = loadBag();
-  $('titleShop').style.display = s.unlocked ? 'inline-flex' : 'none';
-  $('titleItems').textContent = ownedText(s);
-  $('shop').style.display = 'none'; $('title').style.display = 'flex';
-}
-function showShop(){
-  const s = loadBag();
-  $('shopPts').textContent = s.pts;
-  $('shopList').innerHTML = '';
-  for(const it of ITEMS){
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="ic">${it.ic}</span><span class="tx"><b>${it.name}(${it.cost}面)</b>${it.desc}<br>持っている数 ${s.items[it.id]}</span>`;
-    const bt = document.createElement('button'); bt.className = 'btn'; bt.textContent = '交換';
-    bt.disabled = s.pts < it.cost;
-    bt.onclick = () => { const t = loadBag(); if(t.pts < it.cost) return; t.pts -= it.cost; t.items[it.id]++; saveBag(t); showShop() };
-    li.append(bt); $('shopList').append(li);
-  }
-  $('over').style.display = 'none'; $('title').style.display = 'none'; $('shop').style.display = 'flex';
-}
+// ---- タイトル ----
+// 前のアイテム交換(面数で砂時計・泡立て器・金のトング)は、スキルツリーの枝へ移した(2026-11-08本人「アイテムみたいな見せ方じゃなくて地図でスキルツリーの形で」)
+// 貯めた面数は localStorage の yuki-macaron-bag-v1 にそのまま残してある(消していない)
+function showTitle(){ $('title').style.display = 'flex' }
 function startGame(){
   Sound.start(); Sound.play('click');
-  // 持っているアイテムを1つずつ使う
-  const s = loadBag(), used = [];
-  if(s.items.hourglass > 0){ s.items.hourglass--; extraSec = 10; used.push('⏳砂時計') }
-  if(s.items.whisk > 0){ s.items.whisk--; quotaRate = 0.8; used.push('🥄泡立て器') }
-  const tongs = s.items.tongs > 0; if(tongs){ s.items.tongs--; used.push('✨金のトング') }
-  saveBag(s);
-  stepsLeft = stageSteps(); showStage();
+  Skill.resetRun();
+  stepsLeft = stageSteps(); showStage(); showMul(); showKinds();
   $('title').style.display = 'none';
   initShelf();
-  if(used.length) pop3d('アイテムを使いました', used.join(' '), new THREE.Vector3(0, H*.5, DEPTH/2 + 20), 26, '#ffd23f');
-  if(tongs) setTimeout(rush, 900);
 }
 $('startBtn').onclick = startGame;
-$('titleShop').onclick = showShop;
-$('overShop').onclick = showShop;
-$('shopBack').onclick = () => gameOver ? location.reload() : showTitle();
 
 // ---- 毎こま ----
 // 0→1 で、少し行き過ぎてから戻る(ぽんっと出る)
@@ -1013,7 +1042,7 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-showStage();
+showStage(); showKinds(); showMul();
 showTitle();
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
