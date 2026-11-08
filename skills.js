@@ -27,7 +27,7 @@ export const NODES = [
   {id:'bigShelf', parent:'tongs', ic:'🥚', name:'上等な生地', max:3, cost:[5, 9, 14], desc:l => `棚に1つ上の段階が出る +${15*l}%`, x:240, y:195},
 
   // ノルマの枝
-  {id:'whisk', parent:'root', ic:'🥄', name:'泡立て器', max:3, cost:[4, 7, 11], desc:l => `ノルマ -${10*l}%`, x:294, y:330},
+  {id:'whisk', parent:'root', ic:'🥣', name:'ふるい', max:3, cost:[4, 7, 11], desc:l => `ノルマ -${10*l}%`, x:294, y:330},
 ];
 const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
 

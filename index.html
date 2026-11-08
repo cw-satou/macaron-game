@@ -99,6 +99,16 @@
   #kinds .kind.hit{animation:bump .5s ease}
   #kinds .mc{width:26px;height:18px;border:2px solid var(--ink);border-radius:50%/45%;flex:none;
     background:linear-gradient(var(--c) 0 38%,#fff8ee 38% 62%,var(--c) 62%);box-shadow:inset 0 -3px 0 var(--s)}
+  /* パティシエの道具: お菓子屋さんのショーケースのような2列の棚 */
+  #tools .panel{width:min(420px,100%);padding:20px 16px;gap:8px}
+  #toolList{list-style:none;padding:10px;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:10px;
+    background:linear-gradient(#fff6e8,#ffe9d6);border:var(--line) solid var(--ink);border-radius:18px}
+  #toolList .tool{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;border:var(--line) solid var(--ink);border-radius:14px;background:#fff;text-align:center}
+  #toolList .tool.own{background:#fff0f5}
+  #toolList .ic{font-size:34px;line-height:1.1}
+  #toolList b{font-size:var(--fs-m)}
+  #toolList .tx{font-size:var(--fs-xs);line-height:1.4;color:var(--ink-soft);flex:1}
+  #toolList .btn{min-height:40px;padding:0 10px;font-size:var(--fs-s);align-self:stretch}
   /* スキルツリー: 根が下、枝が上へのびる図 */
   #skills .panel{width:min(420px,100%);padding:20px 16px;gap:8px}
   #tree{width:100%;height:auto;background:radial-gradient(circle at 50% 95%,#fff6c8,#fff0f5 45%,#eef3ff);border:var(--line) solid var(--ink);border-radius:18px}
@@ -136,7 +146,8 @@
   <p>もらえた円<br><b id="got" class="got num">0円</b></p>
   <p class="note" id="perkNote"></p>
   <button class="g-login" id="overLogin" data-yuki-login style="display:none;align-self:center">Googleでログイン</button>
-  <button class="btn" onclick="location.reload()">タイトルへ</button>
+  <button class="btn" id="overTools">道具を買う</button>
+  <button class="btn sub" onclick="location.reload()">タイトルへ</button>
   <a class="btn sub" href="../#trade">株を見る</a>
 </div></div>
 <div id="title" class="layer" style="display:flex"><div class="panel">
@@ -144,6 +155,7 @@
   <h1 class="ttl">マカロン<br>ゲーム</h1>
   <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
   <button class="btn" id="startBtn">スタート</button>
+  <button class="btn sub" id="titleTools">🧁 パティシエの道具</button>
   <p class="note" style="font-size:var(--fs-xs)">音楽 MintoDog「Cozy Puzzle」・効果音 Kenney(どちらも CC0)</p>
 </div></div>
 <div id="cycle" class="layer"><div class="panel">
@@ -153,6 +165,13 @@
   <button class="btn" id="cycleGo">次のステージへ</button>
   <button class="btn sub" id="cycleTree">🌳 スキルツリー</button>
   <button class="btn sub" id="cycleEnd">ここで終える</button>
+</div></div>
+<div id="tools" class="layer"><div class="panel">
+  <h2>パティシエの道具</h2>
+  <p>メダル <b id="medals" class="num">0</b>枚　<span class="note">(クリアしたステージ1つで1枚)</span></p>
+  <p class="note">一度買えば、次からずっと効きます。</p>
+  <ul id="toolList"></ul>
+  <button class="btn sub" id="toolsBack">タイトルへ</button>
 </div></div>
 <div id="skills" class="layer"><div class="panel">
   <h2>スキルツリー</h2>
@@ -168,6 +187,7 @@
 import * as THREE from 'three';
 import * as Skill from './skills.js?v=game';
 import * as StageMap from './stagemap.js?v=game';
+import * as Tools from './tools.js?v=game';
 
 const GAME_ID = 'macaron-game';
 const $ = id => document.getElementById(id);
@@ -514,11 +534,13 @@ let combo = 0, comboTimer = 0;
 // 時計は最初の1個を落としたときから動く。こま数(60こまで1秒)で数えるので、タブを隠している間は止まる
 let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDone = false;
 // スキルの効き目(skills.js)。ノルマの割引はすぐ、時間はステージの始めに効く
-const quotaNow = () => Math.round(quotaOf(stage) * Skill.fx.quotaRate());
-const stageSteps = () => (STAGE_SEC + Skill.fx.extraSec())*60;
+// パティシエの道具(tools.js)はランをまたいで効き、スキルと掛け合わさる
+const quotaRate = () => Skill.fx.quotaRate() * Tools.fx.quotaRate();
+const quotaNow = () => Math.round(quotaOf(stage) * quotaRate());
+const stageSteps = () => (STAGE_SEC + Skill.fx.extraSec() + Tools.fx.extraSec())*60;
 // いまの点の倍率 = スキル × フィーバー × コンボ。HUD にも出す
 function pointMul(){
-  return Skill.fx.scoreMul() * (feverSteps > 0 ? Skill.fx.feverMul() : 1) * (1 + Skill.fx.comboRate()*Math.max(0, combo - 1));
+  return Skill.fx.scoreMul() * Tools.fx.scoreMul() * (feverSteps > 0 ? Skill.fx.feverMul() : 1) * (1 + Skill.fx.comboRate()*Math.max(0, combo - 1));
 }
 function showMul(){
   const m = pointMul();
@@ -563,7 +585,7 @@ function stageStep(){
   if(got > q){
     // クリア: 「ステージNクリア！」と花吹雪(2026-11-08本人)
     const sg = sugarOf(got, q); Skill.run.sugar += sg;
-    pop3d(`ステージ${stage}クリア！`, `シュガー +${sg}　次のノルマ ${Math.round(quotaOf(stage + 1)*Skill.fx.quotaRate())}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
+    pop3d(`ステージ${stage}クリア！`, `シュガー +${sg}　次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate())}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
     petals(); Sound.play('clear', 1, 1.2);
     stageLog.push({got, q});
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
@@ -628,7 +650,7 @@ function askCycle(){
   const done = StageMap.regionOf(stage - 1, CYCLE), next = StageMap.regionOf(stage, CYCLE);
   $('cycleTitle').textContent = `${done.name}を抜けた！`;
   $('cycleNote').textContent = `ステージ${stage - 1}までクリア・スコア ${score.toLocaleString()}・シュガー ${Skill.run.sugar}。次は${next.ic}${next.name}。ここで終えると円を受け取れます。`;
-  StageMap.drawMap($('stageMap'), {stage, per:CYCLE, log:stageLog, quota:n => Math.round(quotaOf(n)*Skill.fx.quotaRate()),
+  StageMap.drawMap($('stageMap'), {stage, per:CYCLE, log:stageLog, quota:n => Math.round(quotaOf(n)*quotaRate()),
     marks:{[BOMB_FROM]:'💣', [BURNT_FROM]:'🟫'}});
   $('cycleGo').textContent = `ステージ${stage}へ進む`;
   $('cycle').style.display = 'flex';
@@ -868,7 +890,7 @@ function clearOne(c, pts, label){
 function explode(bomb){
   if(bomb.merged || gameOver) return;
   bomb.merged = true;
-  const bx = bomb.position.x, by = bomb.position.y, mul = pointMul(), pow = Skill.fx.bombMul(), reach = BOMB_REACH*Skill.fx.bombReach();
+  const bx = bomb.position.x, by = bomb.position.y, mul = pointMul(), pow = Skill.fx.bombMul() + Tools.fx.bombPlus(), reach = BOMB_REACH*Skill.fx.bombReach();
   Composite.remove(world, bomb); removeMacaron(bomb);
   let sum = 0, n = 0;
   for(const c of Composite.allBodies(world)){
@@ -932,6 +954,9 @@ async function endGame(why){
     : why === 'cycle' ? '' : 'マカロンが線の上まであふれました。')
     + (stage > 1 ? `ステージ${stage - 1}までクリア。` : '');
   $('final').textContent = score;
+  // クリアしたステージ数だけメダルをもらい、パティシエの道具を買える
+  const medals = Tools.addMedals(stage - 1);
+  $('overTools').textContent = stage > 1 ? `メダル+${stage - 1}　道具を買う(${medals}枚)` : `道具を見る(メダル${medals}枚)`;
   $('got').textContent = '…';
   $('over').style.display = 'flex';
   await Yuki.ready;
@@ -954,16 +979,29 @@ async function endGame(why){
 
 // ---- タイトル ----
 // 前のアイテム交換(面数で砂時計・泡立て器・金のトング)は、スキルツリーの枝へ移した(2026-11-08本人「アイテムみたいな見せ方じゃなくて地図でスキルツリーの形で」)
-// 貯めた面数は localStorage の yuki-macaron-bag-v1 にそのまま残してある(消していない)
-function showTitle(){ $('title').style.display = 'flex' }
+// 貯めた面数は localStorage の yuki-macaron-bag-v1 にそのまま残し、パティシエの道具のメダルとして引き継いだ(tools.js)
+function showTitle(){ $('tools').style.display = 'none'; $('title').style.display = 'flex' }
 function startGame(){
   Sound.start(); Sound.play('click');
-  Skill.resetRun();
+  Skill.resetRun(); Skill.run.sugar = Tools.fx.startSugar();
+  kindLv.fill(Tools.fx.startLv());
   stepsLeft = stageSteps(); showStage(); showMul(); showKinds();
   $('title').style.display = 'none';
   initShelf();
+  const own = Tools.TOOLS.filter(t => Tools.has(t.id)).map(t => t.ic).join('');
+  if(own) pop3d('パティシエの道具', own, new THREE.Vector3(0, H*.5, DEPTH/2 + 20), 28, '#ffd23f');
 }
 $('startBtn').onclick = startGame;
+// パティシエの道具の棚(ゲームオーバーの後とタイトルから開く)
+function showTools(){
+  Tools.draw($('toolList'), $('medals'), () => Sound.play('grow', 1.2));
+  $('over').style.display = 'none'; $('title').style.display = 'none'; $('tools').style.display = 'flex';
+}
+$('overTools').onclick = showTools;
+$('titleTools').onclick = showTools;
+$('toolsBack').onclick = () => gameOver ? location.reload() : showTitle();
+for(const id of ['overTools', 'titleTools', 'toolsBack']) $(id).addEventListener('click', () => Sound.play('click'));
+$('toolList').addEventListener('click', e => { if(e.target.closest('button')) Sound.play('click') });
 
 // ---- 毎こま ----
 // 0→1 で、少し行き過ぎてから戻る(ぽんっと出る)
