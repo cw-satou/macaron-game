@@ -13,6 +13,10 @@
   #score,#quota,#time{font-size:var(--fs-l);display:inline-block}
   #hud #stageLbl{margin-right:.5em}
   #quota.done{color:var(--pink)}
+  /* ゆらすボタン: 遊ぶ場所の右下(親指で押しやすい位置) */
+  #shakeBtn{position:absolute;right:12px;bottom:14px;z-index:5;font:inherit;font-size:var(--fs-s);font-weight:800;min-height:48px;padding:0 18px;
+    border:var(--line) solid var(--ink);border-radius:var(--r-pill);background:var(--sun);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;white-space:nowrap}
+  #shakeBtn:disabled{opacity:.4}
   #time.hurry{color:#e8204f;animation:bump .5s ease infinite}
   @media (max-width:560px){ #hud{gap:12px} #hud .lbl{margin-right:.15em} #score,#quota,#time{font-size:var(--fs-m)} #hud .lbl-next{display:none} }
   #score.bump{animation:bump .3s ease}
@@ -40,6 +44,15 @@
   #over h2{font-size:var(--fs-xl)}
   #over .got{font-size:30px;color:var(--pink)}
   #err{display:none;padding:24px;text-align:center}
+
+  /* ステージ一覧(クリア済み・次・まだ先) */
+  #stageMap{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  #stageMap li{border:var(--line) solid var(--ink);border-radius:14px;padding:8px 4px;background:#fff;font-size:var(--fs-xs);line-height:1.4}
+  #stageMap li b{display:block;font-size:var(--fs-s);white-space:nowrap}
+  #stageMap li.done{background:#fff0f5}
+  #stageMap li.done b::after{content:' ✓';color:var(--pink)}
+  #stageMap li.next{background:var(--sun);animation:bump 1s ease infinite}
+  #stageMap li.lock{opacity:.45}
 
   /* 花吹雪 */
   .petal{position:absolute;top:-24px;width:12px;height:9px;border-radius:70% 0 70% 0;opacity:.95;
@@ -75,7 +88,7 @@
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span>
   <span><span class="lbl lbl-next">ネクスト</span><span id="next"></span></span>
 </div>
-<div id="stage"><canvas id="c"></canvas><div id="fx"></div></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2 id="overTitle">ゲームオーバー</h2>
@@ -97,9 +110,10 @@
   <button class="btn sub" id="titleShop" style="display:none">アイテムGET</button>
 </div></div>
 <div id="cycle" class="layer"><div class="panel">
-  <h2 id="cycleTitle">ステージ3クリア！</h2>
+  <h2 id="cycleTitle">ステージ一覧</h2>
   <p class="note" id="cycleNote"></p>
-  <button class="btn" id="cycleGo">続ける</button>
+  <ol id="stageMap"></ol>
+  <button class="btn" id="cycleGo">次のステージへ</button>
   <button class="btn sub" id="cycleEnd">ここで終える</button>
 </div></div>
 <div id="shop" class="layer"><div class="panel">
@@ -433,6 +447,7 @@ function stageStep(){
     // クリア: 「ステージNクリア！」と花吹雪(2026-11-08本人)
     pop3d(`ステージ${stage}クリア！`, `次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate)}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
     petals();
+    stageLog.push({got, q});
     stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
     shake = 6;
     showStage();
@@ -443,17 +458,43 @@ function stageStep(){
     endGame('time');
   }
 }
+// 3ステージで一区切りして、ステージ一覧に戻る(2026-11-08本人「一区切りは一旦ステージ一覧に戻る感じにしましょう」)
+// ケースを揺らす(2026-11-08本人「ケース揺らせるようにして」): 左右に4回ゆさぶり、中のマカロンを寄せたり跳ねさせたりする。続けて押せないよう1.5秒あける
+function shakeCase(){
+  if(gameOver || paused || $('title').style.display !== 'none') return;
+  $('shakeBtn').disabled = true; setTimeout(() => $('shakeBtn').disabled = false, 1500);
+  shake = 10;
+  [1, -1, 1, -1].forEach((dir, i) => setTimeout(() => {
+    for(const b of Composite.allBodies(world)){
+      if(b.label !== 'mac' || b.isStatic) continue;
+      Body.setVelocity(b, {x: b.velocity.x + dir*4.5, y: b.velocity.y - 1.8});
+      const m = meshes.get(b.id); if(m) m.userData.sv += .8;
+    }
+  }, i*130));
+}
+$('shakeBtn').onclick = shakeCase;
+
 const CYCLE = 3;
 let paused = false;
+const stageLog = [];   // クリアしたステージの {got, q}
 function askCycle(){
   if(gameOver) return;
-  $('cycleTitle').textContent = `ステージ${stage - 1}クリア！`;
-  $('cycleNote').textContent = `ここまでのスコア ${score}。続けると次はステージ${stage}(ノルマ ${quotaNow()}点)です。ここで終えると、円とクリアした${stage - 1}面を受け取ってタイトルへ戻れます。`;
+  $('cycleTitle').textContent = `ステージ${stage - 1}までクリア！`;
+  $('cycleNote').textContent = `ここまでのスコア ${score}。ここで終えると、円とクリアした${stage - 1}面を受け取れます。`;
+  $('stageMap').innerHTML = '';
+  for(let n = 1; n < stage + CYCLE; n++){
+    const li = document.createElement('li'), q = Math.round(quotaOf(n)*quotaRate);
+    if(n < stage){ li.className = 'done'; li.innerHTML = `<b>ステージ${n}</b>${stageLog[n - 1].got}/${stageLog[n - 1].q}点` }
+    else if(n === stage){ li.className = 'next'; li.innerHTML = `<b>ステージ${n}</b>つぎ<br>ノルマ${q}` }
+    else { li.className = 'lock'; li.innerHTML = `<b>ステージ${n}</b>ノルマ${q}` }
+    $('stageMap').append(li);
+  }
+  $('cycleGo').textContent = `ステージ${stage}へ進む`;
   $('cycle').style.display = 'flex';
 }
 $('cycleGo').onclick = () => {
   $('cycle').style.display = 'none'; paused = false;
-  if(!current && !falling){ canDrop = true; spawn() }
+  if(!current){ canDrop = true; spawn() }
 };
 $('cycleEnd').onclick = () => { $('cycle').style.display = 'none'; endGame('cycle') };
 // 花吹雪: 画面の上から花びらを舞い落とす(飾りなので、動きを減らす設定のときは出さない)
@@ -477,12 +518,13 @@ function rush(){
   const lv = DROP_LVS - 1, r = MAC[lv].r;
   pop3d('マカロンラッシュ！', `${MAC[lv].name} ×${RUSH_N}`, new THREE.Vector3(0, H*.62, DEPTH/2 + 20), 42, MAC[lv].c);
   shake = 5;
+  // 2倍の大きさでは横に散らすと8個で箱が埋まったので、真ん中あたりに順に重ねて落とし、くっついて育つ連鎖にする
   for(let i = 0; i < RUSH_N; i++) setTimeout(() => {
     if(gameOver) return;
-    const x = r + 4 + ((i*0.618 + 0.1) % 1)*(W - 2*r - 8);     // 横に散らして順に降らせる
+    const x = W/2 + (i % 2 ? 18 : -18);
     const b = makeBody(x, -r - 10, lv); Composite.add(world, b);
     Body.setVelocity(b, {x:0, y:4}); addMacaron(b).userData.pop = .001;
-  }, i*160);
+  }, i*380);
 }
 function spawn(){
   current = makeBody(px, DROP_Y, nextLv, true);
@@ -493,17 +535,12 @@ function moveTo(x){ if(!current || gameOver) return; px = clampX(x); Body.setPos
 function drop(){
   if(!current || !canDrop || gameOver || paused) return;
   const lv = current.lv;
-  Body.setStatic(current, false); falling = current; current = null; canDrop = false; started = true;
+  Body.setStatic(current, false); current = null; canDrop = false; started = true;
   cloudDrop();
   pop3d(MAC[lv].name, null, toWorld(px, DROP_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
-  // 連打で勝てないよう、落としたマカロンが何かに着地してから次を出す(2026-11-08本人「連打ゲームになってる」)
-  clearTimeout(landTimer); landTimer = setTimeout(landed, 1600);
-}
-let falling = null, landTimer = 0;
-function landed(){
-  if(!falling) return;
-  falling = null; clearTimeout(landTimer);
-  setTimeout(() => { if(gameOver || paused) return; canDrop = true; spawn() }, 280);
+  // 連打は止めない。代わりに、抱えているマカロンと同じ種類を箱の中で光らせて、狙って落とすほうが得だと分かるようにする
+  // (2026-11-08本人「連打できないようにするんじゃなくて、したら良くないとわかるように。ツモったマカロンと同じマカロンを光らせる」)
+  setTimeout(() => { if(gameOver) return; canDrop = true; if(!paused) spawn() }, 650);
 }
 // 指の位置 → 箱の中の横位置(画面の点から z=0 の面へ光線を飛ばす)
 const ray = new THREE.Raycaster(), plane0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit = new THREE.Vector3();
@@ -520,7 +557,6 @@ cv.addEventListener('pointerup', e => { if(e.pointerType !== 'mouse'){ moveTo(po
 // ぶつかったら、ぷるんと揺らす
 Events.on(engine, 'collisionStart', ev => {
   for(const p of ev.pairs){
-    if(falling && (p.bodyA === falling || p.bodyB === falling)) landed();
     const rel =Math.hypot(p.bodyA.velocity.x - p.bodyB.velocity.x, p.bodyA.velocity.y - p.bodyB.velocity.y);
     for(const b of [p.bodyA, p.bodyB]){ const m = meshes.get(b.id); if(m) m.userData.sv += Math.min(3.2, rel*.32) }
   }
@@ -711,8 +747,20 @@ function frame(now){
     if(u.pop > 0 && u.pop < 1){ u.pop = Math.min(1, u.pop + dt*3.2); s = backOut(u.pop) }
     const sq = u.sq + idle;
     const jig = m.children[0];
+    // 抱えているのと同じ種類は、光に合わせてふくらんだり縮んだりして目立たせる
+    if(current && b.lv === current.lv && !b.isStatic) s *= 1 + .07*(.5 + .5*Math.sin(now/170));
     jig.scale.set(s*(1 + sq*.6), s*(1 - sq), s*(1 + sq*.6));
     jig.rotation.z = reduce ? 0 : u.w;
+  }
+  { // 抱えているマカロンと同じ種類を、箱の中で脈打つように光らせる(殻とクリームの材質は種類ごとに共有なので、材質の光を変える)
+    const hold = current ? current.lv : -1, glow = .6 + .4*Math.sin(now/170);
+    PARTS.forEach((P, lv) => {
+      const on = lv === hold;
+      for(const mat of [P.shell, P.cream]){
+        if(on){ mat.emissive.set(MAC[lv].c); mat.emissiveIntensity = glow }
+        else if(mat.emissiveIntensity) { mat.emissive.set(0x000000); mat.emissiveIntensity = 0 }
+      }
+    });
   }
   { // 雲: 抱えているマカロンの真上について動き、ふわふわ浮き、落とすときにぽよんと弾む
     const u = cloud.userData, tx = px - W/2;
