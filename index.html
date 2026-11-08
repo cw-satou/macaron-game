@@ -1000,7 +1000,11 @@ function techStep(){
       Body.applyForce(a, a.position, {x:dx/d*k*a.mass, y:dy/d*k*a.mass});
       Body.applyForce(b, b.position, {x:-dx/d*k*b.mass, y:-dy/d*k*b.mass});
     }
-    if(quakeSteps % 8 === 0) for(const b of list) Body.setVelocity(b, {x:b.velocity.x + (Math.random()*2 - 1)*1.2, y:b.velocity.y - Math.random()*1.5});
+    // 間に別のマカロンが挟まると寄れないので、相手のいるマカロンはぴょんと跳ねさせて越えさせる
+    if(quakeSteps % 10 === 0) for(const b of list){
+      const pair = list.some(o => o !== b && o.lv === b.lv);
+      Body.setVelocity(b, {x:b.velocity.x + (Math.random()*2 - 1)*1.2, y:b.velocity.y - (pair ? 5 + Math.random()*3 : Math.random()*1.5)});
+    }
   }
   // 自動パティシエ: 指を離している間、棚の1個を同じ種類の真上へ運んで落とす
   if(autoSteps > 0){
