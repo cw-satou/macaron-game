@@ -52,14 +52,23 @@
   body.fever #score{color:var(--pink);animation:bump .45s ease infinite}
   @keyframes fever{to{background-position:400% 0}}
 
-  /* ステージ一覧(クリア済み・次・まだ先) */
-  #stageMap{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-  #stageMap li{border:var(--line) solid var(--ink);border-radius:14px;padding:8px 4px;background:#fff;font-size:var(--fs-xs);line-height:1.4}
-  #stageMap li b{display:block;font-size:var(--fs-s);white-space:nowrap}
-  #stageMap li.done{background:#fff0f5}
-  #stageMap li.done b::after{content:' ✓';color:var(--pink)}
-  #stageMap li.next{background:var(--sun);animation:bump 1s ease infinite}
-  #stageMap li.lock{opacity:.45}
+  /* ステージのマップ: 下から上へ曲がる道。5ステージで1つの地方(stagemap.js) */
+  #cycle .panel{width:min(420px,100%);padding:18px 16px;gap:8px}
+  #stageMap{width:100%;height:auto;border:var(--line) solid var(--ink);border-radius:18px;overflow:hidden;flex:none}
+  #stageMap .road{fill:none;stroke:#fff;stroke-width:26;stroke-linecap:round;opacity:.9}
+  #stageMap .roadLine{fill:none;stroke:#e6c9a8;stroke-width:3;stroke-dasharray:2 9;stroke-linecap:round}
+  #stageMap .deco{font-size:20px;opacity:.35}
+  #stageMap .region{font-size:16px;font-weight:800;fill:var(--ink)}
+  #stageMap .stop circle{fill:#fff;stroke:var(--ink);stroke-width:3}
+  #stageMap .stop .num{font-size:15px;font-weight:800;text-anchor:middle;fill:var(--ink)}
+  #stageMap .stop .cap{font-size:13px;font-weight:800;fill:var(--ink)}
+  #stageMap .stop .sub{font-size:11px;font-weight:700;fill:var(--ink-soft)}
+  #stageMap .stop.done circle{fill:var(--pink)}
+  #stageMap .stop.done .num{fill:#fff}
+  #stageMap .stop.next circle{fill:var(--sun);stroke-width:4}
+  #stageMap .stop.lock{opacity:.6}
+  #stageMap .stop.boss circle{stroke-width:4}
+  #stageMap .here{font-size:24px;text-anchor:middle}
 
   /* 花吹雪 */
   .petal{position:absolute;top:-24px;width:12px;height:9px;border-radius:70% 0 70% 0;opacity:.95;
@@ -140,7 +149,7 @@
 <div id="cycle" class="layer"><div class="panel">
   <h2 id="cycleTitle">ステージ一覧</h2>
   <p class="note" id="cycleNote"></p>
-  <ol id="stageMap"></ol>
+  <svg id="stageMap" viewBox="0 0 340 540" aria-label="ステージのマップ"></svg>
   <button class="btn" id="cycleGo">次のステージへ</button>
   <button class="btn sub" id="cycleTree">🌳 スキルツリー</button>
   <button class="btn sub" id="cycleEnd">ここで終える</button>
@@ -158,6 +167,7 @@
 <script type="module">
 import * as THREE from 'three';
 import * as Skill from './skills.js?v=game';
+import * as StageMap from './stagemap.js?v=game';
 
 const GAME_ID = 'macaron-game';
 const $ = id => document.getElementById(id);
@@ -615,16 +625,11 @@ let paused = false;
 const stageLog = [];   // クリアしたステージの {got, q}
 function askCycle(){
   if(gameOver) return;
-  $('cycleTitle').textContent = `ステージ${stage - 1}までクリア！`;
-  $('cycleNote').textContent = `ここまでのスコア ${score}。ここで終えると、円とクリアした${stage - 1}面を受け取れます。`;
-  $('stageMap').innerHTML = '';
-  for(let n = 1; n < stage + CYCLE; n++){
-    const li = document.createElement('li'), q = Math.round(quotaOf(n)*Skill.fx.quotaRate());
-    if(n < stage){ li.className = 'done'; li.innerHTML = `<b>ステージ${n}</b>${stageLog[n - 1].got}/${stageLog[n - 1].q}点` }
-    else if(n === stage){ li.className = 'next'; li.innerHTML = `<b>ステージ${n}</b>つぎ<br>ノルマ${q}` }
-    else { li.className = 'lock'; li.innerHTML = `<b>ステージ${n}</b>ノルマ${q}` }
-    $('stageMap').append(li);
-  }
+  const done = StageMap.regionOf(stage - 1, CYCLE), next = StageMap.regionOf(stage, CYCLE);
+  $('cycleTitle').textContent = `${done.name}を抜けた！`;
+  $('cycleNote').textContent = `ステージ${stage - 1}までクリア・スコア ${score.toLocaleString()}・シュガー ${Skill.run.sugar}。次は${next.ic}${next.name}。ここで終えると円を受け取れます。`;
+  StageMap.drawMap($('stageMap'), {stage, per:CYCLE, log:stageLog, quota:n => Math.round(quotaOf(n)*Skill.fx.quotaRate()),
+    marks:{[BOMB_FROM]:'💣', [BURNT_FROM]:'🟫'}});
   $('cycleGo').textContent = `ステージ${stage}へ進む`;
   $('cycle').style.display = 'flex';
 }
@@ -930,7 +935,9 @@ async function endGame(why){
   $('got').textContent = '…';
   $('over').style.display = 'flex';
   await Yuki.ready;
-  const r = await Yuki.earn(GAME_ID, score);
+  // サーバーは1回3万点を超える記録を受け付けない(api/config.php の maxScore)。点が雪だるま式に増える形にしたので、超えた分は3万点として送る
+  // 円への換算をどうするかは本人の判断待ち(2026-11-08)
+  const r = await Yuki.earn(GAME_ID, Math.min(score, 30000));
   if(r.error){
     $('got').textContent = '0円';
     $('perkNote').textContent = r.error === 'too_fast' ? '記録は20秒に1回までです。' : '円を記録できませんでした。通信を確かめてください。';
