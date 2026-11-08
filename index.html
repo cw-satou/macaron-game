@@ -41,7 +41,7 @@
 <body>
 <header class="bar">
   <a class="logo" href="../"><span class="h24">24H</span>ユウキ<span class="arrow">↑</span>ゲームズ</a>
-  <span class="wallet"><small>所持金</small><span id="yen" class="num">0円</span></span>
+  <div class="bar-right"><span id="who"></span><span class="wallet"><small>所持金</small><span id="yen" class="num">0円</span></span></div>
 </header>
 <div id="hud"><span><span class="lbl">スコア</span><b id="score" class="num">0</b></span><span><span class="lbl">ネクスト</span><span id="next"></span></span></div>
 <div id="stage"><canvas id="c"></canvas><div id="fx"></div></div>
@@ -51,6 +51,7 @@
   <p>スコア <b id="final" class="num">0</b></p>
   <p>もらえた円<br><b id="got" class="got num">0円</b></p>
   <p class="note" id="perkNote"></p>
+  <button class="g-login" id="overLogin" data-yuki-login style="display:none;align-self:center">Googleでログイン</button>
   <button class="btn" onclick="location.reload()">もう一回</button>
   <a class="btn sub" href="../#trade">株を見る</a>
 </div></div>
@@ -410,6 +411,10 @@ async function endGame(){
   $('got').textContent = '+' + Yuki.yen(r.yen);
   $('yen').textContent = Yuki.yen(Yuki.state.yen);
   if(r.perk) $('perkNote').textContent = '株主優待で1.2倍になりました';
+  if(r.practice && Yuki.online){
+    $('perkNote').textContent = 'いまは練習の円です。ログインすると円がサーバーに記録され、株を買えます(はじめてのログインで10万円まで持ち込めます)。';
+    if(Yuki.loginReady) $('overLogin').style.display = 'inline-flex';
+  }
 }
 
 // ---- 毎こま ----
