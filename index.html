@@ -1047,9 +1047,9 @@ async function endGame(why){
   gameOver = true;
   document.body.classList.remove('fever'); feverSteps = 0; autoSteps = 0; quakeSteps = 0;
   Sound.play(why === 'cycle' ? 'clear' : 'over'); Sound.bgmDown();
-  $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' ? 'おつかれさま！' : 'ゲームオーバー';
+  $('overTitle').textContent = why === 'time' ? 'タイムアップ' : why === 'cycle' || why === 'quit' ? 'おつかれさま！' : 'ゲームオーバー';
   $('overWhy').textContent = (why === 'time' ? `ステージ${stage}のノルマ ${quotaNow()}点を超えられませんでした。`
-    : why === 'cycle' ? '' : 'マカロンが線の上まであふれました。')
+    : why === 'cycle' || why === 'quit' ? '' : 'マカロンが線の上まであふれました。')
     + (stage > 1 ? `ステージ${stage - 1}までクリア。` : '');
   $('final').textContent = score;
   // クリアしたステージ数だけメダルをもらい、パティシエの道具を買える
@@ -1187,6 +1187,8 @@ function frame(now){
 requestAnimationFrame(frame);
 showStage(); showKinds(); showMul();
 showTitle();
+// 終わるボタン(2026-11-09本人「全部のゲームに終わるボタンつけてください」「その時点の点で精算」)
+Yuki.quitButton({playing:() => $('title').style.display === 'none' && !gameOver, onQuit:() => endGame('quit')});
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
   get shelf(){ return shelf.map(s => s && {x:Math.round(s.x), lv:s.lv, ready:s.ready}) }, get held(){ return held },
