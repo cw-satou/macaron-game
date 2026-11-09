@@ -162,7 +162,7 @@
 <div id="title" class="layer" style="display:flex"><div class="panel">
   <p class="kicker">24Hユウキ↑ゲームズ</p>
   <h1 class="ttl">マカロン<br>ゲーム</h1>
-  <p class="note">同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
+  <p class="note" data-desc>同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
   <button class="btn" id="startBtn">スタート</button>
   <button class="btn sub" id="titleTools">🧁 パティシエの道具</button>
   <p class="note" style="font-size:var(--fs-xs)">音楽 MintoDog「Cozy Puzzle」・効果音 Kenney(どちらも CC0)</p>
@@ -1188,6 +1188,7 @@ requestAnimationFrame(frame);
 showStage(); showKinds(); showMul();
 showTitle();
 // 終わるボタン(2026-11-09本人「全部のゲームに終わるボタンつけてください」「その時点の点で精算」)
+Yuki.descClose('macaron-game');
 Yuki.quitButton({playing:() => $('title').style.display === 'none' && !gameOver, onQuit:() => endGame('quit')});
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
