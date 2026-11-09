@@ -15,7 +15,7 @@ export const NODES = [
   // ばくだん
   {id:'bombPow',   parent:'root',      ic:'💣', name:'ばくだんの威力', max:4, cost:[3, 5, 8, 12], desc:l => `爆発で消した点 ×${2 + l}`, x:COL[0], y:330},
   {id:'bombReach', parent:'bombPow',   ic:'💥', name:'大きな爆風',     max:3, cost:[4, 7, 11],    desc:l => `爆発の範囲 +${25*l}%`,   x:COL[0], y:225},
-  {id:'bombRate',  parent:'bombReach', ic:'🧨', name:'火薬だな',       max:2, cost:[6, 10],       desc:l => `棚にばくだんが出やすい +${8*l}%`, x:COL[0], y:120},
+  {id:'bombRate',  parent:'bombReach', ic:'🧨', name:'火薬だな',       max:2, cost:[6, 10],       desc:l => `ばくだんが1ステージに +${l}個`, x:COL[0], y:120},
 
   // じしん(技): 箱を揺らしながら、同じマカロンどうしを引き寄せる
   {id:'quake',      parent:'root',  ic:'🌋', name:'じしん',       max:3, cost:[5, 8, 12], tech:true, desc:l => `【技】${QUAKE_SEC[l]}秒ゆれて、同じマカロンが寄り合う`, x:COL[1], y:310},
@@ -62,7 +62,7 @@ export const fx = {
   comboRate: () => .1*lv('comboUp'),
   bombMul:   () => 2 + lv('bombPow'),
   bombReach: () => 1 + .25*lv('bombReach'),
-  bombRate:  () => .08*lv('bombRate'),
+  bombStock: () => lv('bombRate'),   // ばくだんは💣ボタンで落とす形になったので、出やすさではなく個数を足す(2026-11-09)
   extraSec:  () => 10*lv('hourglass'),
   feverSec:  () => 4*lv('feverLong'),
   feverMul:  () => 2 + lv('feverMul'),

@@ -17,6 +17,11 @@
   #shakeBtn{position:absolute;right:12px;bottom:14px;z-index:5;font:inherit;font-size:var(--fs-s);font-weight:800;min-height:48px;padding:0 18px;
     border:var(--line) solid var(--ink);border-radius:var(--r-pill);background:var(--sun);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;white-space:nowrap}
   #shakeBtn:disabled{opacity:.4}
+  /* ばくだんボタン: ゆらすの上。押すと雲のいる位置にばくだんが落ちる。右上の数字は、このステージの残り */
+  #bombBtn{position:absolute;right:12px;bottom:74px;z-index:5;display:none;width:60px;height:60px;font-size:28px;line-height:1;
+    border:var(--line) solid var(--ink);border-radius:50%;background:#ffd9c2;box-shadow:var(--shadow);cursor:pointer}
+  #bombBtn:disabled{opacity:.35}
+  #bombBtn small{position:absolute;right:-4px;top:-4px;font-size:12px;font-weight:800;background:var(--pink);color:#fff;border-radius:10px;padding:1px 6px}
   /* 音のボタン: 遊ぶ場所の左下 */
   #muteBtn{position:absolute;left:12px;bottom:14px;z-index:5;width:48px;height:48px;font-size:22px;line-height:1;
     border:var(--line) solid var(--ink);border-radius:50%;background:#fff;box-shadow:var(--shadow);cursor:pointer}
@@ -146,7 +151,7 @@
   <span><span class="lbl">スコア</span><b id="score" class="num">0</b><b id="mulTag" class="num"></b></span>
   <span><span class="lbl" id="stageLbl">ステージ1</span><b id="quota" class="num">0/40</b></span>
   <span><span class="lbl">のこり</span><b id="time" class="num">60</b></span></div>
-<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button><button type="button" id="treeBtn">🌳 スキル</button><div id="kinds" aria-label="マカロンごとのレベル"></div><div id="techs"></div></div>
+<div id="stage"><canvas id="c"></canvas><div id="fx"></div><button type="button" id="shakeBtn">ゆらす</button><button type="button" id="bombBtn" aria-label="ばくだんを落とす">💣<small id="bombN">0</small></button><button type="button" id="muteBtn" aria-label="音を消す">🔊</button><button type="button" id="treeBtn">🌳 スキル</button><div id="kinds" aria-label="マカロンごとのレベル"></div><div id="techs"></div></div>
 <p id="err">このブラウザでは立体の表示が使えません。新しいブラウザで開いてください。</p>
 <div id="over"><div class="panel">
   <h2 id="overTitle">ゲームオーバー</h2>
@@ -162,7 +167,7 @@
 <div id="title" class="layer" style="display:flex"><div class="panel">
   <p class="kicker">24Hユウキ↑ゲームズ</p>
   <h1 class="ttl">マカロン<br>ゲーム</h1>
-  <p class="note" data-desc>同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分を超えるとマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ばくだんはまわりをまとめて消す。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
+  <p class="note" data-desc>同じマカロンをくっつけて大きくしよう。<br>1ステージ60秒。時間が来たときにノルマを超えていれば次の周へ。<br>ノルマの半分をかせぐごとに、何度でもマカロンラッシュ！<br>5コンボでフィーバー(点×2)。ステージ2からは💣ボタンで、雲のいる所へばくだんを落とせる(まわりをまとめて消す)。こげマカロンは横でくっつけて消そう。<br>クリアでもらうシュガーで、右上の🌳スキルを育てよう。</p>
   <button class="btn" id="startBtn">スタート</button>
   <button class="btn sub" id="titleTools">🧁 パティシエの道具</button>
   <p class="note" style="font-size:var(--fs-xs)">音楽 MintoDog「Cozy Puzzle」・効果音 Kenney(どちらも CC0)</p>
@@ -276,8 +281,10 @@ const STAGE_SEC = 60;
 const quotaOf = n => Math.round(1000 * Math.pow(3, n - 1));    // 1000, 3000, 9000, 27000, 81000 …
 const DROP_LVS = 4;                                             // 上から落ちてくるのは 0〜3 の4種
 const rnd = () => Math.floor(Math.random() * DROP_LVS);
-// マカロンラッシュ: そのステージの点がノルマの半分を超えたら1回、落ちてくる種類の中でいちばん価値の高いマカロンを8個降らせる(2026-11-08本人)
-const RUSH_N = 8;
+// マカロンラッシュ: そのステージの点がノルマの半分をかせぐごとに(50%・100%・150%…と何度でも)、落ちてくる種類の中でいちばん価値の高いマカロンを8個降らせる
+// (2026-11-09本人「ラッシュはステージの目標スコアの半分ごとに(複数回出る)」。前は半分を超えたときの1回だけ)
+// 一度に大きくかせいで何回分もまたいだときは、重ねて降らせず RUSH_GAP 秒あけて順に出す(8個が降りきるのに約3秒。間隔は私の仮置き)
+const RUSH_N = 8, RUSH_GAP = 5;
 
 // ---- 物理(平面のまま。見た目だけ立体にする) ----
 const {Engine, Bodies, Body, Composite, Events} = Matter;
@@ -292,7 +299,9 @@ Composite.add(world, [
 ]);
 function makeBody(x, y, lv, st = false){
   const r = MAC[lv].r;
-  const b = Bodies.rectangle(x, y, 2*r, 2*r*HALF_H, {chamfer:{radius:r*HALF_H*0.92}, isStatic:st,
+  // 棚で待っている間(st)は、ほかの体をすり抜けさせる。ラッシュで降ったマカロンが棚の2個の上に乗って止まり、線の上であふれた扱いになるのを防ぐ
+  // (ラッシュが何度も出るようにして目立った。2026-11-09)。落とすとき(drop)に、ふつうの当たりへ戻す
+  const b = Bodies.rectangle(x, y, 2*r, 2*r*HALF_H, {chamfer:{radius:r*HALF_H*0.92}, isStatic:st, isSensor:st,
     restitution:.12, friction:.45, density:.002, label:'mac'});
   b.lv = lv; return b;
 }
@@ -541,7 +550,7 @@ function makeDeco(k){
 let score = 0, gameOver = false, current = null, overSteps = 0;   // current = 雲がつかんでいるマカロンの体
 let combo = 0, comboTimer = 0;
 // 時計は最初の1個を落としたときから動く。こま数(60こまで1秒)で数えるので、タブを隠している間は止まる
-let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushDone = false;
+let stage = 1, stageBase = 0, stepsLeft = STAGE_SEC*60, started = false, rushCount = 0, rushWait = 0;   // rushCount = このステージで出したラッシュの回数、rushWait = 次のラッシュまで待つこま数
 // スキルの効き目(skills.js)。ノルマの割引はすぐ、時間はステージの始めに効く
 // パティシエの道具(tools.js)はランをまたいで効き、スキルと掛け合わさる
 const quotaRate = () => Skill.fx.quotaRate() * Tools.fx.quotaRate();
@@ -588,7 +597,8 @@ function showStage(){
 function stageStep(){
   if(!started) return;
   const got = score - stageBase, q = quotaNow();
-  if(!rushDone && got > q/2){ rushDone = true; rush() }
+  if(rushWait > 0) rushWait--;
+  else if(got > q/2*(rushCount + 1)){ rushCount++; rushWait = RUSH_GAP*60; rush(rushCount) }
   if(--stepsLeft > 0){ showStage(); return }
   // 時間が来た: ノルマを超えていれば次の周へ、超えていなければゲームオーバー
   if(got > q){
@@ -597,11 +607,12 @@ function stageStep(){
     pop3d(`ステージ${stage}クリア！`, `シュガー +${sg}　次のノルマ ${Math.round(quotaOf(stage + 1)*quotaRate())}`, new THREE.Vector3(0, H*.55, DEPTH/2 + 20), 44, '#ffd23f');
     petals(); Sound.play('clear', 1, 1.2);
     stageLog.push({got, q});
-    stage++; stageBase = score; stepsLeft = stageSteps(); rushDone = false;
+    stage++; stageBase = score; stepsLeft = stageSteps(); rushCount = 0;
     shake = 6;
     showStage(); showMul();
     autoSteps = 0; refillTechs();   // 技はステージごとに使える回数が戻る
-    if(Skill.fx.rushStart()) setTimeout(rush, 1600);
+    refillBombs();                  // ばくだんもステージごとに戻る
+    if(Skill.fx.rushStart()){ setTimeout(rush, 1600); rushWait = Math.max(rushWait, RUSH_GAP*60 + 96) }
     // 3ステージで一区切り。続けるか、ここで終えるかを聞く(2026-11-08本人「ワンサイクル3ステージで一旦タイトルに戻るか続けるかを聞く」)
     if((stage - 1) % CYCLE === 0){ paused = true; setTimeout(askCycle, 1400) }
   }else{
@@ -638,7 +649,7 @@ let treeFrom = null;   // 'game' か 'cycle'
 function openTree(from){
   treeFrom = from; paused = true;
   if(from === 'cycle') $('cycle').style.display = 'none';
-  Skill.draw($('tree'), $('treeInfo'), n => { Sound.play('grow', 1.2); showMul(); showStage(); showTechs() });
+  Skill.draw($('tree'), $('treeInfo'), n => { Sound.play('grow', 1.2); showMul(); showStage(); showTechs(); if(n.id === 'bombRate' && stage >= BOMB_FROM){ bombLeft++; showBombs() } });
   showMul();
   $('skills').style.display = 'flex';
 }
@@ -686,10 +697,11 @@ function petals(){
     setTimeout(() => el.remove(), 4200);
   }
 }
-function rush(){
+function rush(nth){
+  if(gameOver) return;
   const lv = DROP_LVS - 1, r = MAC[lv].r;
   Sound.play('rush', 1, 1.2);
-  pop3d('マカロンラッシュ！', `${MAC[lv].name} ×${RUSH_N}`, new THREE.Vector3(0, H*.62, DEPTH/2 + 20), 42, MAC[lv].c);
+  pop3d('マカロンラッシュ！', `${MAC[lv].name} ×${RUSH_N}` + (nth > 1 ? `　${nth}回目` : ''), new THREE.Vector3(0, H*.62, DEPTH/2 + 20), 42, MAC[lv].c);
   shake = 5;
   // 2倍の大きさでは横に散らすと8個で箱が埋まったので、真ん中あたりに順に重ねて落とし、くっついて育つ連鎖にする
   for(let i = 0; i < RUSH_N; i++) setTimeout(() => {
@@ -721,9 +733,8 @@ function fillShelf(i){
     x = r + Math.random()*(W - 2*r);
     if(!o || Math.abs(x - o.x) > r + MAC[o.lv].r + 30) break;
   }
-  // ステージ2から、ときどき「ばくだん」が混ざる(棚の2枠が両方ばくだんにはしない)
-  const bomb = started && stage >= BOMB_FROM && !(o && o.body.kind === 'bomb') && Math.random() < BOMB_RATE + Skill.fx.bombRate();
-  const body = bomb ? makeBomb(x, -120, true) : makeBody(x, -120, lv, true);
+  // ばくだんは棚に混ざらない。💣ボタンで自分で落とす(2026-11-09本人)
+  const body = makeBody(x, -120, lv, true);
   Composite.add(world, body); addMacaron(body).userData.pop = .001;
   shelf[i] = {body, lv:body.lv, x, y:-120, ready:false};
 }
@@ -742,12 +753,11 @@ function moveHeld(target){
 function drop(){
   if(held < 0 || gameOver || paused) return;
   const s = shelf[held], lv = s.lv;
-  Body.setStatic(s.body, false); Body.setVelocity(s.body, {x:0, y:2});
-  if(s.body.kind === 'bomb') s.body.armed = true;
+  Body.setStatic(s.body, false); s.body.isSensor = false; Body.setVelocity(s.body, {x:0, y:2});
   shelf[held] = null; const empty = held; held = -1; current = null; started = true;
   cloudDrop();
   Sound.play('drop', .92 + Math.random()*.16);
-  pop3d(s.body.kind === 'bomb' ? 'ばくだん！' : MAC[lv].name, null, toWorld(s.x, SHELF_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
+  pop3d(MAC[lv].name, null, toWorld(s.x, SHELF_Y - MAC[lv].r - 18), 22 + lv*2, MAC[lv].c);
   setTimeout(() => { if(!gameOver) fillShelf(empty) }, 450);
 }
 // 毎こま: 雲の高さと横位置、棚のマカロンの位置を進める
@@ -858,8 +868,10 @@ function merge(a, b){
 }
 
 // ---- 熱中させる仕掛け(2026-11-08本人「熱中させるパッションのギミックがないね。爆破で消えるとか邪魔者が飛んでくるとか」) ----
-// 中身は私の仮置き(本人未確認)。ばくだん=ステージ2から棚に混ざる / こげマカロン=ステージ3から上から降る / フィーバー=5コンボで8秒間 点×2
-const BOMB_FROM = 2, BOMB_RATE = .14, BOMB_R = 40, BOMB_REACH = 150;
+// 中身は私の仮置き(本人未確認)。ばくだん=ステージ2から💣ボタンで落とす / こげマカロン=ステージ3から上から降る / フィーバー=5コンボで8秒間 点×2
+// ばくだんは自然には落ちてこない。💣ボタンを押すと、雲のいる横位置に落ちる(2026-11-09本人「爆弾は自然におちてこないようにして、自分でボタンで落とせるように」)
+// 1ステージに BOMB_N 個(スキル「火薬だな」で増える)。前は棚に14%で混ざり1ステージ5個前後だったので、狙って落とせるぶん少なめの3個にした(個数は私の仮置き)
+const BOMB_FROM = 2, BOMB_N = 3, BOMB_R = 40, BOMB_REACH = 150;
 const BURNT_FROM = 3, burntEvery = () => Math.max(6, 15 - stage);   // 秒。ステージが進むほど短く
 const FEVER_COMBO = 5, FEVER_SEC = 8;
 let feverSteps = 0, burntTimer = 8*60;
@@ -896,6 +908,32 @@ function clearOne(c, pts, label){
   if(label) pop3d(label, `+${pts}`, at, 24, '#8a7a70');
   $('score').textContent = score;
 }
+let bombLeft = 0, bombCool = false;
+const bombMax = () => BOMB_N + (Skill.fx.bombStock?.() ?? 0);   // ?. は、端末に前の skills.js が残っていても止まらないため
+function showBombs(){
+  const on = stage >= BOMB_FROM && $('title').style.display === 'none';
+  $('bombBtn').style.display = on ? 'block' : 'none';
+  $('bombN').textContent = bombLeft;
+  $('bombBtn').disabled = bombLeft <= 0 || bombCool;
+}
+function refillBombs(){
+  const first = stage === BOMB_FROM && bombLeft === 0;
+  bombLeft = stage >= BOMB_FROM ? bombMax() : 0; showBombs();
+  if(first) setTimeout(() => { if(!gameOver) pop3d('💣ばくだんが使える！', `右下のボタンで落とす　1ステージ${bombLeft}個`, new THREE.Vector3(0, H*.42, DEPTH/2 + 20), 28, '#ff7a1a') }, 2600);
+}
+function dropBomb(){
+  if(gameOver || paused || bombCool || bombLeft <= 0 || stage < BOMB_FROM || $('title').style.display !== 'none') return;
+  bombLeft--; bombCool = true; setTimeout(() => { bombCool = false; showBombs() }, 500);   // 続けて押しても重ならないよう0.5秒あける
+  // 雲のいる横位置へ。棚で待っているマカロン(動かない体)に当たらないよう、棚のすぐ下から落とす
+  const x = Math.max(BOMB_R, Math.min(W - BOMB_R, cloud.userData.x ?? W/2)), y = SHELF_Y + 80;
+  const b = makeBomb(x, y, false); b.armed = true;
+  Composite.add(world, b); Body.setVelocity(b, {x:0, y:4}); addMacaron(b).userData.pop = .001;
+  started = true; cloudDrop();
+  Sound.play('drop', .8);
+  pop3d('ばくだん！', null, toWorld(x, y - BOMB_R - 18), 24, '#ff7a1a');
+  showBombs();
+}
+$('bombBtn').onclick = dropBomb;
 // ばくだん: 落として何かに当たると、少しして爆発。まわりをまとめて消し、点に威力(はじめ×2。スキルで上がる)を掛ける
 function explode(bomb){
   if(bomb.merged || gameOver) return;
@@ -1012,7 +1050,7 @@ function techStep(){
     if(--autoTimer <= 0 && held < 0 && !pressing){
       const i = shelf.findIndex(s => s && s.ready);
       if(i >= 0){
-        const s = shelf[i], t = s.body.kind ? null : topOf(s.lv);
+        const s = shelf[i], t = topOf(s.lv);
         held = i; current = s.body;
         moveHeld(t ? t.position.x : MAC[s.lv].r + Math.random()*(W - 2*MAC[s.lv].r));
         drop(); autoTimer = 48;
@@ -1085,6 +1123,7 @@ function startGame(){
   kindLv.fill(Tools.fx.startLv());
   stepsLeft = stageSteps(); showStage(); showMul(); showKinds(); refillTechs();
   $('title').style.display = 'none';
+  refillBombs();
   initShelf();
   const own = Tools.TOOLS.filter(t => Tools.has(t.id)).map(t => t.ic).join('');
   if(own) pop3d('パティシエの道具', own, new THREE.Vector3(0, H*.5, DEPTH/2 + 20), 28, '#ffd23f');
