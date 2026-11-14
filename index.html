@@ -6,6 +6,8 @@
 <title>マカロンゲーム | 24Hユウキ↑ゲームズ</title>
 <link rel="stylesheet" href="../shared/yuki.css?v=dev">
 <style>
+  body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  body input,body textarea{-webkit-user-select:text;user-select:text}
   html,body{height:100%;touch-action:none;overflow:hidden}
   body{background:linear-gradient(#f3f6ff,#fff 70%)}
   #hud{display:flex;justify-content:center;gap:clamp(10px,4vw,24px);padding:8px;align-items:center;font-weight:800;height:52px;white-space:nowrap}
@@ -625,12 +627,12 @@ function stageStep(){
 function shakeCase(){
   if(gameOver || paused || $('title').style.display !== 'none') return;
   $('shakeBtn').disabled = true; setTimeout(() => $('shakeBtn').disabled = false, 1500);
-  shake = 12; Sound.play('shake');
+  shake = 16; Sound.play('shake');
   // 1回の大きな突き上げ: 上へ高く飛ばし、横はマカロンごとにばらばらの向きと強さ、くるっと回して、あとは自由落下
   // (2026-11-08本人「揺らすともっと上方向にマカロンが飛んでランダムで左右に移動して自由落下」)
   for(const b of Composite.allBodies(world)){
     if(b.label !== 'mac' || b.isStatic) continue;
-    Body.setVelocity(b, {x: (Math.random()*2 - 1)*6, y: -(11 + Math.random()*5)});
+    Body.setVelocity(b, {x: (Math.random()*2 - 1)*10, y: -(18 + Math.random()*8)});
     Body.setAngularVelocity(b, (Math.random()*2 - 1)*.12);
     const m = meshes.get(b.id); if(m) m.userData.sv += 1.4;
   }
@@ -771,8 +773,16 @@ function clawStep(dt){
   if(held >= 0 && pressing) moveHeld(fingerX);
   const h = held >= 0 ? shelf[held] : null;
   // 雲の横位置: つかんでいれば、そのマカロンの真上。押しているだけなら指へ寄る
+  // 押していないあいだは、雲が左右に往復する(2026-11-14 改善点。約70px/秒、両端70pxの余白。AI仮置き)。指を離したら離した位置から動き出す
+  if(!h && !pressing && !paused && !reduce){
+    if(u.x == null) u.x = W/2;
+    if(!u.dir) u.dir = 1;
+    u.x += u.dir*70*dt;
+    if(u.x >= W-70){ u.x = W-70; u.dir = -1 }
+    else if(u.x <= 70){ u.x = 70; u.dir = 1 }
+  }
   const tx = h ? h.x : pressing ? fingerX : (u.x ?? W/2);
-  u.x = h ? tx : (u.x ?? W/2) + (tx - (u.x ?? W/2))*Math.min(1, dt*14);
+  u.x = h ? tx : (u.x ?? W/2) + (tx - (u.x ?? W/2))*Math.min(1, dt*(pressing ? 14 : 100));
   // 雲の高さ: 押している間は棚の高さまで降りる(つかんだマカロンの上の面に雲の下の縁が付く)
   const under = h ?? shelf.find(s => s && s.ready && Math.abs(s.x - u.x) < MAC[s.lv].r*.9);
   const downY = (H - SHELF_Y) + (under ? MAC[under.lv].r*HALF_H : 34) + CLOUD_BOTTOM;
@@ -1232,7 +1242,7 @@ Yuki.quitButton({playing:() => $('title').style.display === 'none' && !gameOver,
 window.__macaron = {get score(){ return score }, get count(){ return meshes.size }, get decos(){ return decos.length },
   get stage(){ return stage }, get secLeft(){ return Math.ceil(stepsLeft/60) }, get over(){ return gameOver },
   get shelf(){ return shelf.map(s => s && {x:Math.round(s.x), lv:s.lv, ready:s.ready}) }, get held(){ return held },
-  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) },
+  get cloudY(){ return Math.round(cloud.userData.y ?? CLOUD_UP) }, get cloudX(){ return Math.round(cloud.userData.x ?? W/2) }, screenOf(x){ return project(toWorld(x, SHELF_Y)) },
   get levels(){ return Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic && !b.kind).map(b => b.lv).sort() },   // 試験が使う
   get bodies(){ return Composite.allBodies(world).filter(b => b.label === 'mac' && !b.isStatic).map(b => [b.lv, Math.round(b.position.x), Math.round(b.position.y)]) },
   get quake(){ return quakeSteps },
